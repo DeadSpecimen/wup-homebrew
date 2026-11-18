@@ -1,0 +1,15 @@
+# Build artifacts
+build/
+*.o
+*.d
+*.elf
+*.map
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor
+*.swp
+*~
+.vscode/

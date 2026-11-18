@@ -1,0 +1,9 @@
+# everything generated
+build/
+*.bmp
+.DS_Store
+
+__pycache__/
+
+# your pad's dumps live in ../wup-firmware, never here
+firmware/

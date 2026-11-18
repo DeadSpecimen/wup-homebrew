@@ -1,0 +1,8 @@
+# everything generated
+build/
+*.bmp
+.DS_Store
+__pycache__/
+
+# third-party code fetched by tools/deps.py
+third_party/

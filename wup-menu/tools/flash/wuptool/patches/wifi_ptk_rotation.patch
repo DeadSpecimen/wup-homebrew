@@ -1,0 +1,24 @@
+# PTK Rotation Patch for Wii U GamePad WiFi
+#
+# Nintendo rotates the PTK (Pairwise Transient Key) 3 bytes to the left
+# after computation, making it incompatible with standard WPA2.
+#
+# This patch NOPs out the two memcpy calls that perform the rotation
+# at the end of the key expansion function (0x24B78).
+#
+# Reference: https://libdrc.org/docs/re/wifi.html
+#
+# Flash addresses: Partition2 (0x500000) + WIFI (0xBC310) + offset
+
+# First memcpy(3 bytes) - NOP it out
+# BL 0x17D0 -> NOP NOP
+0x5E0F56:DCF7C3FD:00BF00BF
+
+# Second memcpy(3 bytes) - NOP it out
+# BL 0x17D0 -> NOP NOP
+0x5E0F60:DCF7BEFD:00BF00BF
+
+# CRC32 update - must reflect ALL patches (OUI + rotation)
+# Previous CRC (OUI-only): 0x7C209717
+# New CRC (all patches):   0x58E47773
+0x5F9630:1797207C:7377E458

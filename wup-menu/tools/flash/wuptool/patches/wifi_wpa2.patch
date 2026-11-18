@@ -1,0 +1,28 @@
+# WPA2 OUI patches for Wii U GamePad
+# Apply to partition 2 after copying Product1 to Product2
+#
+# Changes Nintendo OUI (A4:C0:E1) to standard WPA2 OUI (00:0F:AC)
+# This allows the GamePad to connect to standard WPA2 access points
+#
+# Patch locations (absolute flash addresses):
+#   0x5E5B22 = Partition2 (0x500000) + WIFI offset (0xBC310) + 0x29812
+#   0x5E731F = Partition2 (0x500000) + WIFI offset (0xBC310) + 0x2B00F
+#   0x5E7325 = Partition2 (0x500000) + WIFI offset (0xBC310) + 0x2B015
+#   0x5E732B = Partition2 (0x500000) + WIFI offset (0xBC310) + 0x2B01B
+#
+# CRC32 location:
+#   0x5F9630 = Partition2 (0x500000) + WIFI offset (0xBC310) + 0x3D320
+#
+# Patches span 2 sectors: 0x5E0000 (OUI) and 0x5F0000 (CRC)
+
+# RSN IE validation (receiving)
+0x5E5B22:A4C0E1:000FAC
+
+# RSN IE pattern (sending) - 3 instances
+0x5E731F:A4C0E1:000FAC
+0x5E7325:A4C0E1:000FAC
+0x5E732B:A4C0E1:000FAC
+
+# CRC32 fix - must match CRC32 of data[0x20:0x3D320] after OUI patches
+# Original: 0x8A7F51A5, New: 0x7C209717
+0x5F9630:A5517F8A:1797207C

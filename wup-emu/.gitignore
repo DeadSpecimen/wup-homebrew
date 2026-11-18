@@ -1,0 +1,5 @@
+build/
+wup-emu
+*.bmp
+.DS_Store
+__pycache__/

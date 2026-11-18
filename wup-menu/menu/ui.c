@@ -1,0 +1,535 @@
+/* The Homebrew Menu's screens, with LVGL's stock widgets and theme. Every screen is a function that builds it from
+ * the current state; the screens in use are a stack (B goes back). Work that takes time (scanning, joining,
+ * installing) never runs inside an LVGL event: the event defers it to ui_step(), in the menu's main loop. */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "menu.h"
+#include "wup_hw.h"
+#include "wupfmt.h"
+#include "ftpd.h"
+
+typedef void (*screen_fn)(lv_obj_t *scr);
+static void kb_screen(lv_obj_t *scr);
+static lv_obj_t *kb_obj;                           /* the keyboard on screen: its key selection clicks as it moves */
+static screen_fn stack[8];
+static int depth;                                  /* stack[depth] is showing; 0 = home */
+static void (*deferred)(void);
+static int home_sel;
+static lv_obj_t *status, *battery, *clk;                 /* the title bar's Wi-Fi (and charging) symbols; the battery's charge */
+
+/* Which row has the focus is kept per screen: a screen built again (a setting changed) or returned to (B) shows
+   the same row selected, not the first. */
+static int focus_at[8], shown = -1;
+static int focused_index(void) {
+    lv_group_t *g = lv_group_get_default();
+    lv_obj_t *f = lv_group_get_focused(g);
+    for (uint32_t i = 0; f && i < lv_group_get_obj_count(g); i++) if (lv_group_get_obj_by_index(g, i) == f) return (int)i;
+    return 0;
+}
+static void status_text(void);
+static int quiet;                                  /* (focus set by the menu itself: no click) */
+static void show(void) {                           /* build stack[depth] again and switch to it */
+    quiet = 1;
+    lv_group_t *g = lv_group_get_default();
+    lv_obj_t *old = lv_screen_active(), *scr = lv_obj_create(NULL);
+    if (shown >= 0 && shown <= depth) focus_at[shown] = focused_index();     /* (a screen left by B forgets its row) */
+    lv_group_remove_all_objs(g);
+    status = battery = clk = 0;
+    stack[depth](scr);
+    status_text();
+    lv_obj_t *f = stack[depth] != kb_screen && focus_at[depth] < (int)lv_group_get_obj_count(g) ? lv_group_get_obj_by_index(g, (uint32_t)focus_at[depth]) : 0;
+    if (!f && lv_group_get_obj_count(g)) f = lv_group_get_obj_by_index(g, 0);
+    if (f && stack[depth] != kb_screen) { lv_group_focus_obj(f); lv_obj_add_state(f, LV_STATE_FOCUS_KEY); }   /* shown selected, as after a button press */
+    shown = depth;
+    quiet = 0;
+    lv_screen_load(scr);
+    if (old) lv_obj_delete_async(old);             /* (async: an event of one of its widgets may be running) */
+}
+static void push(screen_fn f) { if (depth < 7) { sound_click(); stack[++depth] = f; focus_at[depth] = 0; show(); } }
+static void pop(void) { if (depth > 0) { sound_click(); depth--; show(); } }
+static void on_group_focus(lv_group_t *g) {
+    if (!quiet) sound_click();
+    lv_obj_t *f = lv_group_get_focused(g);          /* the last row that can be selected: the list shows its end too */
+    uint32_t n = lv_group_get_obj_count(g);         /* (rows below it that only show something, like Storage) */
+    if (f && n && lv_group_get_obj_by_index(g, n - 1) == f) lv_obj_scroll_to_y(lv_obj_get_parent(f), LV_COORD_MAX, quiet ? LV_ANIM_OFF : LV_ANIM_ON);
+}
+static void defer(void (*f)(void)) { deferred = f; }
+
+/* ---- the parts of a screen */
+#define HUD 20                                     /* the size of everything in the bars: button badges, Wi-Fi, battery */
+/* the hints at the bottom right: "B Back    A Select" -> for each, the button as a round badge, then what it does */
+static void hint_bar(lv_obj_t *scr, const char *hints) {
+    lv_color_t ink = M.cfg.light ? lv_color_hex(0x202124) : lv_color_hex(0xf2f2f2), paper = M.cfg.light ? lv_color_white() : lv_color_hex(0x15171a);
+    lv_obj_t *bar = lv_obj_create(scr);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_size(bar, LV_PCT(100), 44); lv_obj_set_style_pad_hor(bar, 32, 0); lv_obj_set_style_pad_column(bar, 6, 0);
+    lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW); lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    if (!depth) {                                   /* home: the menu's version at the left */
+        lv_obj_t *v = lv_label_create(bar);
+        lv_label_set_text(v, "v" MENU_VERSION); lv_obj_set_style_text_font(v, &inter_16, 0); lv_obj_set_style_text_opa(v, LV_OPA_50, 0);
+        lv_obj_set_flex_grow(v, 1);
+    }
+    for (const char *p = hints; *p; ) {
+        char key[2] = { *p, 0 }, what[32]; int n = 0;
+        p++; while (*p == ' ') p++;
+        while (*p && !(p[0] == ' ' && p[1] == ' ') && n < 31) what[n++] = *p++;
+        what[n] = 0; while (*p == ' ') p++;
+        lv_obj_t *badge = lv_obj_create(bar);
+        lv_obj_remove_style_all(badge);
+        lv_obj_set_size(badge, HUD, HUD); lv_obj_set_style_radius(badge, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(badge, ink, 0); lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+        lv_obj_t *k = lv_label_create(badge);
+        lv_label_set_text(k, key); lv_obj_set_style_text_font(k, &inter_hud, 0); lv_obj_set_style_text_color(k, paper, 0); lv_obj_align(k, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_t *t = lv_label_create(bar);
+        lv_label_set_text(t, what); lv_obj_set_style_text_font(t, &inter_16, 0); lv_obj_set_style_text_opa(t, LV_OPA_70, 0);
+        lv_obj_set_style_pad_right(t, 16, 0);
+    }
+}
+static lv_obj_t *page(lv_obj_t *scr, const char *title, const char *hints) {
+    lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_all(scr, 0, 0); lv_obj_set_style_pad_row(scr, 0, 0);
+    lv_obj_t *bar = lv_obj_create(scr);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_size(bar, LV_PCT(100), 64); lv_obj_set_style_pad_hor(bar, 32, 0);
+    lv_obj_set_flex_flow(bar, LV_FLEX_FLOW_ROW); lv_obj_set_flex_align(bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t *t = lv_label_create(bar);
+    lv_label_set_text(t, title); lv_obj_set_style_text_font(t, &inter_32, 0);
+    {                                               /* Wi-Fi, charging and the battery, on every screen, at the size of the button badges */
+        lv_color_t ink = M.cfg.light ? lv_color_hex(0x202124) : lv_color_hex(0xf2f2f2);
+        lv_obj_t *st = lv_obj_create(bar);
+        lv_obj_remove_style_all(st); lv_obj_set_size(st, LV_SIZE_CONTENT, 28); lv_obj_set_style_pad_column(st, 10, 0);
+        lv_obj_set_flex_flow(st, LV_FLEX_FLOW_ROW); lv_obj_set_flex_align(st, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        status = lv_label_create(st); lv_label_set_text(status, ""); lv_obj_set_style_text_color(status, ink, 0);
+        lv_obj_t *bat = lv_obj_create(st);            /* the battery: a body with its charge inside, and the tip */
+        lv_obj_remove_style_all(bat); lv_obj_set_size(bat, 36, HUD - 4);
+        lv_obj_t *body = lv_obj_create(bat);
+        lv_obj_remove_style_all(body); lv_obj_set_size(body, 32, HUD - 4); lv_obj_set_style_radius(body, 4, 0);
+        lv_obj_set_style_border_width(body, 2, 0); lv_obj_set_style_border_color(body, ink, 0); lv_obj_set_style_pad_all(body, 2, 0);
+        battery = lv_obj_create(body);
+        lv_obj_remove_style_all(battery); lv_obj_set_height(battery, LV_PCT(100)); lv_obj_set_style_radius(battery, 1, 0);
+        lv_obj_set_style_bg_color(battery, ink, 0); lv_obj_set_style_bg_opa(battery, LV_OPA_COVER, 0);
+        lv_obj_t *tip = lv_obj_create(bat);
+        lv_obj_remove_style_all(tip); lv_obj_set_size(tip, 3, 7); lv_obj_align(tip, LV_ALIGN_RIGHT_MID, 0, 0); lv_obj_set_style_radius(tip, 1, 0);
+        lv_obj_set_style_bg_color(tip, ink, 0); lv_obj_set_style_bg_opa(tip, LV_OPA_COVER, 0);
+        clk = lv_label_create(st); lv_label_set_text(clk, ""); lv_obj_set_style_text_color(clk, ink, 0);   /* the time, once known */
+    }
+    lv_obj_t *list = lv_list_create(scr);
+    lv_obj_set_width(list, LV_PCT(100)); lv_obj_set_flex_grow(list, 1);
+    lv_obj_set_style_radius(list, 0, 0); lv_obj_set_style_border_width(list, 0, 0); lv_obj_set_style_pad_hor(list, 24, 0);
+    hint_bar(scr, hints);
+    return list;
+}
+static lv_obj_t *row(lv_obj_t *list, const void *icon, const char *text, const char *value, lv_event_cb_t cb, void *arg) {
+    lv_obj_t *b = lv_list_add_button(list, icon, text);
+    lv_obj_set_style_pad_ver(b, 16, 0);
+    if (icon && lv_image_src_get_type(icon) == LV_IMAGE_SRC_SYMBOL) {       /* symbols differ in width: one column, so the texts line up */
+        lv_obj_t *im = lv_obj_get_child(b, 0);
+        lv_obj_set_width(im, 28); lv_image_set_inner_align(im, LV_IMAGE_ALIGN_CENTER);
+    }
+    if (value) { lv_obj_t *v = lv_label_create(b); lv_label_set_text(v, value); lv_obj_set_style_text_opa(v, LV_OPA_60, 0); }
+    if (cb) lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, arg); else { lv_obj_remove_flag(b, LV_OBJ_FLAG_CLICKABLE); lv_group_remove_obj(b); }
+    return b;
+}
+static void sw_row_icon(lv_obj_t *list, const void *icon, const char *text, int on, lv_event_cb_t cb) {
+    lv_obj_t *b = row(list, icon, text, NULL, cb, NULL), *s = lv_switch_create(b);
+    lv_group_remove_obj(s); lv_obj_remove_flag(s, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(s, 46, 24);                     /* (no taller than the text: every row the same height) */
+    lv_obj_set_style_bg_color(s, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR | LV_STATE_CHECKED);   /* (blue is the selected row's)*/
+    if (on) lv_obj_add_state(s, LV_STATE_CHECKED);
+}
+static void sw_row(lv_obj_t *list, const char *text, int on, lv_event_cb_t cb) { sw_row_icon(list, NULL, text, on, cb); }
+static void note(lv_obj_t *list, const char *text) {
+    lv_obj_t *l = lv_label_create(list);
+    lv_label_set_text(l, text); lv_obj_set_width(l, LV_PCT(100)); lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(l, &inter_16, 0); lv_obj_set_style_text_opa(l, LV_OPA_60, 0);
+    lv_obj_set_style_pad_hor(l, 16, 0); lv_obj_set_style_pad_top(l, 8, 0); lv_obj_set_style_pad_bottom(l, 20, 0);
+}
+static void apply_theme(void) {
+    lv_display_t *d = lv_display_get_default();
+    lv_display_set_theme(d, lv_theme_default_init(d, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED), !M.cfg.light, &inter_20));
+}
+
+/* ---- a keyboard: the Wi-Fi password, the file sharing password */
+static char kb_title[64], kb_text[64];
+static void (*kb_done)(void);
+static void kb_event(lv_event_t *e) {
+    lv_obj_t *ta = lv_event_get_user_data(e);
+    if (lv_event_get_code(e) == LV_EVENT_READY) {
+        const char *t = lv_textarea_get_text(ta);
+        if (strlen(t) < 8) return;                 /* (WPA2: 8 or more) */
+        strncpy(kb_text, t, sizeof kb_text - 1); kb_text[sizeof kb_text - 1] = 0;
+        defer(kb_done);
+    } else defer(pop);
+}
+static void kb_screen(lv_obj_t *scr) {
+    lv_obj_t *t = lv_label_create(scr);
+    lv_label_set_text(t, kb_title); lv_obj_align(t, LV_ALIGN_TOP_LEFT, 32, 20);
+    lv_obj_t *ta = lv_textarea_create(scr);
+    lv_textarea_set_one_line(ta, true); lv_textarea_set_max_length(ta, 63); lv_textarea_set_placeholder_text(ta, "Password");
+    lv_obj_set_width(ta, 790); lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 60);
+    lv_group_remove_obj(ta);
+    lv_obj_t *kb = kb_obj = lv_keyboard_create(scr);
+    lv_obj_set_size(kb, LV_PCT(100), 330);
+    lv_keyboard_set_textarea(kb, ta);
+    lv_obj_add_event_cb(kb, kb_event, LV_EVENT_READY, ta); lv_obj_add_event_cb(kb, kb_event, LV_EVENT_CANCEL, ta);
+    lv_obj_set_style_outline_width(kb, 0, LV_STATE_FOCUS_KEY); lv_obj_set_style_border_width(kb, 0, LV_STATE_FOCUS_KEY);   /* (no focus line: it is all there is) */
+    lv_obj_set_style_outline_width(kb, 0, LV_STATE_FOCUSED); lv_obj_set_style_border_width(kb, 0, 0);
+    lv_group_focus_obj(kb);
+}
+static void ask_password(const char *title, void (*done)(void)) {
+    snprintf(kb_title, sizeof kb_title, "%s", title); kb_done = done; memset(kb_text, 0, sizeof kb_text);
+    push(kb_screen);
+}
+
+/* the network's row: the network joined, or Not Connected */
+static const char *net_label(void) {
+#ifdef MENU_PREVIEW                                /* (pictures from the emulator, which has no Wi-Fi) */
+    return "Home";
+#endif
+    return M.ip[0] ? M.cfg.ssid : "Not Connected";
+}
+
+/* ---- Wi-Fi */
+#define MAXN 16
+static wifi_net nets[MAXN];
+static int nnets = -1, net_pick;                   /* -1: not searched yet, -2: no Wi-Fi */
+static void spinner(lv_obj_t *parent);
+/* work in progress, the same everywhere (searching, joining, erasing): the spinner, a title ending in an ellipsis, and
+   a quieter line under it. -> the title; *sub, *spin if wanted */
+static lv_obj_t *busy(lv_obj_t *l, const char *title, const char *line, lv_obj_t **sub, lv_obj_t **spin) {
+    lv_obj_set_flex_align(l, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(l, 10, 0);
+    spinner(l);
+    lv_obj_t *sp = lv_obj_get_child(l, -1); lv_obj_set_style_margin_bottom(sp, 10, 0);
+    lv_obj_t *t = lv_label_create(l); lv_obj_set_style_text_font(t, &inter_24, 0); lv_label_set_text(t, title);
+    lv_obj_t *s = lv_label_create(l); lv_obj_set_style_text_opa(s, LV_OPA_60, 0); lv_label_set_text(s, line);
+    if (sub) *sub = s;
+    if (spin) *spin = sp;
+    return t;
+}
+static void do_scan(void) {
+#ifdef MENU_PREVIEW_SEARCH                         /* (the emulator's radio answers at once: time for a picture) */
+    menu_wait(600000);
+#endif
+#ifdef MENU_PREVIEW                                /* (sample networks: the emulator has none) */
+    static const char *const sample[] = { "Home", "Home 5G Guest", "Neighbor" };
+    for (nnets = 0; nnets < 3; nnets++) { memset(&nets[nnets], 0, sizeof nets[0]); strcpy(nets[nnets].ssid, sample[nnets]); nets[nnets].secured = nnets < 2; }   /* (Neighbor: open) */
+    strcpy(M.cfg.ssid, "Home");
+    show(); return;
+#endif
+    if (menu_radio()) { nnets = -2; show(); return; }
+    int n = wifi_scan(nets, MAXN);
+    nnets = n > 0 ? n : 0;
+    show();
+}
+static void joining_screen(lv_obj_t *scr) {         /* while it joins: no buttons */
+    char t[48]; snprintf(t, sizeof t, "Joining %s\xE2\x80\xA6", nets[net_pick].ssid);
+    busy(page(scr, "Wi-Fi", ""), t, "", NULL, NULL);
+}
+static void do_connect(void) {
+    wifi_net n = nets[net_pick];
+    menu_connect(&n, kb_text);                     /* (the list shows how it went: a checkmark on the network) */
+    memset(kb_text, 0, sizeof kb_text);
+    depth--;                                       /* (the joining screen goes: back to the list, searched again) */
+    nnets = -1;
+    show();
+}
+static void start_join(void) {
+    if (stack[depth] == kb_screen) depth--;        /* (the keyboard goes) */
+    stack[++depth] = joining_screen; focus_at[depth] = 0; show();
+    defer(do_connect);
+}
+static void on_net(lv_event_t *e) {
+    net_pick = (int)(intptr_t)lv_event_get_user_data(e);
+    const wifi_net *n = &nets[net_pick];
+    if (M.ip[0] && !strcmp(n->ssid, M.cfg.ssid)) return;        /* already on it */
+    if (n->secured) { char t[64]; snprintf(t, sizeof t, "Enter the password for \"%s\"", n->ssid); ask_password(t, start_join); }
+    else { kb_text[0] = 0; start_join(); }
+}
+/* a plain spinner: a quarter of a ring turning at one even speed (LVGL's own also grows and shrinks its arc) */
+static void spin(void *o, int32_t v) { lv_arc_set_rotation(o, v); }
+static void spinner(lv_obj_t *parent) {
+    lv_obj_t *a = lv_arc_create(parent);
+    lv_obj_set_size(a, 44, 44); lv_obj_remove_flag(a, LV_OBJ_FLAG_CLICKABLE); lv_group_remove_obj(a);
+    lv_obj_remove_style(a, NULL, LV_PART_KNOB);
+    lv_obj_set_style_arc_width(a, 5, 0); lv_obj_set_style_arc_width(a, 5, LV_PART_INDICATOR);
+    lv_arc_set_bg_angles(a, 0, 360); lv_arc_set_angles(a, 0, 90);
+    lv_anim_t an; lv_anim_init(&an);
+    lv_anim_set_var(&an, a); lv_anim_set_exec_cb(&an, spin); lv_anim_set_values(&an, 0, 360);
+    lv_anim_set_duration(&an, 900); lv_anim_set_repeat_count(&an, LV_ANIM_REPEAT_INFINITE); lv_anim_set_path_cb(&an, lv_anim_path_linear);
+    lv_anim_start(&an);
+}
+static void wifi_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, "Wi-Fi", nnets == -1 ? "" : nnets == -2 ? "B Back" : "B Back    A Join");   /* (none while it searches) */
+    if (nnets == -2) {                                  /* the radio did not come up */
+        lv_obj_set_flex_align(l, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_t *t = lv_label_create(l); lv_label_set_text(t, "Wi-Fi Not Available"); lv_obj_set_style_text_font(t, &inter_24, 0);
+        return;
+    }
+    if (nnets < 0) {
+        busy(l, "Searching\xE2\x80\xA6", "", NULL, NULL);
+        defer(do_scan);
+        return;
+    }
+    for (int i = 0; i < nnets; i++) {
+        int here = M.ip[0] && !strcmp(nets[i].ssid, M.cfg.ssid);
+#ifdef MENU_PREVIEW
+        here = !strcmp(nets[i].ssid, M.cfg.ssid);
+#endif
+        row(l, here ? LV_SYMBOL_OK : LV_SYMBOL_WIFI, nets[i].ssid, NULL, on_net, (void *)(intptr_t)i);   /* (joined: a checkmark) */
+    }
+    if (!nnets) note(l, "No networks found. The GamePad uses 5 GHz Wi-Fi only.");
+    else note(l, "The GamePad joins 5 GHz networks.");
+}
+
+/* ---- Settings */
+static void file_sharing_screen(lv_obj_t *scr);
+static void network_screen(lv_obj_t *scr);
+static void system_screen(lv_obj_t *scr);
+static void on_open(lv_event_t *e) { push((screen_fn)lv_event_get_user_data(e)); }
+static void on_wifi(lv_event_t *e) { (void)e; nnets = -1; push(wifi_screen); }
+static void on_theme(lv_event_t *e) { (void)e; M.cfg.light = !M.cfg.light; menu_save(); apply_theme(); show(); }
+static void on_sounds(lv_event_t *e) { (void)e; M.cfg.sound_off = !M.cfg.sound_off; menu_save(); show(); }
+static void on_bright(lv_event_t *e) { (void)e; M.cfg.brightness = (uint8_t)(M.cfg.brightness % 10 + 1); hw_backlight(M.cfg.brightness * 10); menu_save(); show(); }
+static void on_share(lv_event_t *e) { (void)e; M.cfg.share_off = !M.cfg.share_off; menu_save(); show(); }
+static void share_pw_done(void) { menu_share_password(kb_text); memset(kb_text, 0, sizeof kb_text); pop(); }
+static void on_share_pw(lv_event_t *e) { (void)e; ask_password("Choose a password for file sharing", share_pw_done); }
+static void on_login(lv_event_t *e) {
+    if (!M.share_auth && !M.share_pass_set) { on_share_pw(e); return; }        /* "Password" needs one first */
+    M.share_auth = !M.share_auth; menu_share_save(); show();
+}
+static void on_boot(lv_event_t *e) { (void)e; M.cfg.autoboot = !M.cfg.autoboot; menu_save(); show(); }
+static void on_dev(lv_event_t *e) { (void)e; M.cfg.debug_off = !M.cfg.debug_off; menu_save(); show(); }
+
+static void settings_screen(lv_obj_t *scr) {
+    char b[8];
+    lv_obj_t *l = page(scr, "Settings", "B Back    A Select");
+    row(l, LV_SYMBOL_WIFI, "Network", net_label(), on_open, network_screen);
+    row(l, LV_SYMBOL_EYE_OPEN, "Appearance", M.cfg.light ? "Light" : "Dark", on_theme, NULL);
+    sw_row_icon(l, LV_SYMBOL_VOLUME_MAX, "Sound Effects", !M.cfg.sound_off, on_sounds);
+    snprintf(b, sizeof b, "%d%%", M.cfg.brightness * 10);          /* 10% .. 100% in tens (never dark) */
+    row(l, WUP_SYMBOL_SUN, "Brightness", b, on_bright, NULL);
+    row(l, LV_SYMBOL_SETTINGS, "System", "", on_open, system_screen);
+}
+static void network_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, "Network", "B Back    A Select");
+    row(l, LV_SYMBOL_WIFI, "Wi-Fi", net_label(), on_wifi, NULL);
+    note(l, "The network the GamePad joins for file sharing, the Netloader and apps.");
+    row(l, LV_SYMBOL_DIRECTORY, "File Sharing", M.cfg.share_off ? "Off" : "On", on_open, file_sharing_screen);
+    note(l, "Copy apps and files between a computer and the GamePad.");
+}
+static void file_sharing_screen(lv_obj_t *scr) {
+    char f[160];
+    lv_obj_t *l = page(scr, "File Sharing", "B Back    A Select");
+    sw_row(l, "File Sharing", !M.cfg.share_off, on_share);
+    if (M.cfg.share_off) snprintf(f, sizeof f, "Turn on to copy apps and files between a computer and the GamePad over Wi-Fi.");
+    else if (!M.ip[0]) snprintf(f, sizeof f, "Join a Wi-Fi network in Network > Wi-Fi to use file sharing.");
+    else snprintf(f, sizeof f, "Connect from a computer using FTP at ftp://%s.", M.ip);
+    note(l, f);
+    row(l, NULL, "Login", M.share_auth ? "Password" : "Anyone", on_login, NULL);
+    if (M.share_auth) row(l, NULL, "Password", M.share_pass_set ? "Set" : "Not Set", on_share_pw, NULL);
+    note(l, M.share_auth ? "Sign in with the user name \"pad\" and this password." : "Anyone on your network can connect without a password.");
+}
+static void zone_screen(lv_obj_t *scr);
+static void date_time_screen(lv_obj_t *scr);
+static void reset_screen(lv_obj_t *scr);
+static void on_24h(lv_event_t *e) { (void)e; clock_set_24h(!clock_24h()); show(); }
+static void on_zone(lv_event_t *e) { clock_set_zone((int)(intptr_t)lv_event_get_user_data(e)); pop(); }
+static void date_time_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, "Date & Time", "B Back    A Select");
+    row(l, NULL, "Time Zone", clock_zones[clock_zone()].name, on_open, zone_screen);
+    sw_row(l, "24-Hour Time", clock_24h(), on_24h);
+    note(l, "Set automatically over Wi-Fi.");
+}
+static void zone_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, "Time Zone", "B Back    A Select");
+    for (int i = 0; i < clock_nzones; i++) row(l, i == clock_zone() ? LV_SYMBOL_OK : LV_SYMBOL_DUMMY, clock_zones[i].name, NULL, on_zone, (void *)(intptr_t)i);   /* (DUMMY: an empty column, so the names line up) */
+    focus_at[depth] = clock_zone();
+}
+static void system_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, "System", "B Back    A Select");
+    menu_refresh_info();
+    row(l, LV_SYMBOL_POWER, "Boot", M.cfg.autoboot ? "Autoboot" : "Hold A", on_boot, NULL);
+    note(l, M.cfg.autoboot ? "This menu opens every time the GamePad turns on." : "Hold A while turning the GamePad on to open this menu.");
+    { char t[40]; if (!clock_text(t, sizeof t, 1)) strcpy(t, "Not Set"); row(l, WUP_SYMBOL_CLOCK, "Date & Time", t, on_open, date_time_screen); }
+    sw_row_icon(l, WUP_SYMBOL_TERMINAL, "Developer Mode", !M.cfg.debug_off, on_dev);
+    note(l, "Lets development tools on your network read and change the GamePad's memory and flash. Keep it off unless you need it.");
+    row(l, WUP_SYMBOL_CHIP, "Firmware", M.firmware, NULL, NULL);
+    row(l, WUP_SYMBOL_DRIVE, "Storage", M.storage, NULL, NULL);
+    row(l, LV_SYMBOL_REFRESH, "Reset", NULL, on_open, reset_screen);
+}
+
+/* ---- Reset: erase all content and settings; then the GamePad is turned off by hand */
+static lv_obj_t *erase_title, *erase_sub, *erase_spin;
+static void erase_tick(void) { lv_timer_handler(); }   /* (between sectors: the spinner keeps turning) */
+static void do_erase(void) {
+    int r = menu_reset(erase_tick);
+    lv_obj_add_flag(erase_spin, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(erase_title, r ? "Not Everything Was Erased" : "Erased");
+    lv_label_set_text(erase_sub, "You can now turn off the Wii U GamePad");
+}
+static void erasing_screen(lv_obj_t *scr) {
+    erase_title = busy(page(scr, "Reset", ""), "Erasing\xE2\x80\xA6", "Don't turn off the GamePad", &erase_sub, &erase_spin);
+}
+static void on_erase(lv_event_t *e) { (void)e; push(erasing_screen); defer(do_erase); }
+static void reset_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, "Reset", "B Back    A Select");
+    row(l, LV_SYMBOL_TRASH, "Erase All Content and Settings", NULL, on_erase, NULL);
+    note(l, "Apps, their data, Wi-Fi and all settings are erased. The Homebrew Menu stays installed.");
+}
+
+/* ---- the Netloader: an app sent from a computer (tools/wuplink.py). One thing in the middle of the screen: a
+   symbol, a line saying what is happening, a smaller one below it, and the bar while an app arrives. */
+static lv_obj_t *nl_icon, *nl_title, *nl_sub, *nl_bar;
+static int nl_state;
+static void nl_show(const char *symbol, const char *title, const char *sub, int bar) {
+    lv_label_set_text(nl_icon, symbol); lv_label_set_text(nl_title, title); lv_label_set_text(nl_sub, sub);
+    if (bar) lv_obj_remove_flag(nl_bar, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(nl_bar, LV_OBJ_FLAG_HIDDEN);
+    if (sub[0]) lv_obj_remove_flag(nl_sub, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(nl_sub, LV_OBJ_FLAG_HIDDEN);
+}
+static void nl_waiting(void) {
+#ifdef MENU_PREVIEW
+    strcpy(M.ip, "192.168.4.104");
+#endif
+    nl_show(LV_SYMBOL_DOWNLOAD, "Ready to Receive", M.ip, 0);
+#ifdef MENU_PREVIEW_RX                             /* (a picture of an app arriving) */
+    nl_show(LV_SYMBOL_DOWNLOAD, "Hello World", "", 1); lv_bar_set_value(nl_bar, 62, LV_ANIM_OFF);
+#endif
+}
+static void netloader_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, "Netloader", "B Back");
+    lv_obj_set_flex_align(l, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(l, 10, 0);
+    nl_icon = lv_label_create(l); lv_obj_set_style_text_font(nl_icon, &inter_32, 0); lv_obj_set_style_text_opa(nl_icon, LV_OPA_50, 0);
+    lv_obj_set_style_pad_bottom(nl_icon, 14, 0);
+    nl_title = lv_label_create(l); lv_obj_set_style_text_font(nl_title, &inter_24, 0);
+    nl_sub = lv_label_create(l); lv_obj_set_style_text_opa(nl_sub, LV_OPA_60, 0);
+    nl_bar = lv_bar_create(l); lv_obj_set_size(nl_bar, 360, 8); lv_obj_set_style_margin_top(nl_bar, 14, 0);
+    nl_state = -1;
+#ifndef MENU_PREVIEW
+    if (!M.ip[0]) { nl_show(LV_SYMBOL_WIFI, "Wi-Fi Not Connected", "Join a network in Settings", 0); return; }
+    if (wuplink_open()) { nl_show(LV_SYMBOL_WARNING, "Netloader Not Available", "", 0); return; }
+#endif
+    nl_waiting();
+}
+/* An app has arrived: it is kept in /apps and started at once, and after it the menu opens at home. Anything that
+   goes wrong (no room, a damaged transfer, not an app) just closes the Netloader: the sender's side says why. */
+static void nl_leave(void) { if (stack[depth] == netloader_screen) { wuplink_close(); nl_title = 0; pop(); } }
+static void nl_log(const char *why) { wup_log("[menu] netloader: "); wup_log(why); wup_log("\n"); }   /* (the UART log has it) */
+static void nl_finish(void) { const char *err = menu_install_received(1); if (err) { nl_log(err); nl_leave(); } }
+static void netloader_step(void) {
+    const wup_status_t *s = wuplink_status();
+    if (!nl_title || s->state == WUP_OFF) return;
+    if (s->state == WUP_RECEIVING) {
+        if (nl_state != WUP_RECEIVING) nl_show(LV_SYMBOL_DOWNLOAD, s->name[0] ? s->name : "Receiving\xE2\x80\xA6", "", 1);
+        lv_bar_set_value(nl_bar, s->total ? (int32_t)((uint64_t)s->done * 100 / s->total) : 0, LV_ANIM_OFF);
+    } else if (s->state == WUP_READY && nl_state != WUP_READY) defer(nl_finish);
+    else if (s->state == WUP_ERROR) { nl_log(s->error ? s->error : "transfer failed"); nl_leave(); return; }
+    else if (s->state == WUP_WAITING && nl_state != WUP_WAITING) nl_waiting();
+    nl_state = s->state;
+}
+
+/* ---- home: the installed apps */
+static int app_err = -1; static char app_err_text[48];   /* an app that could not be opened: why, on its row */
+#define ICONS 12                                   /* icons kept in memory (8 KB each); apps after that show without */
+static lv_image_dsc_t icon[ICONS];
+static void on_app(lv_event_t *e) {
+    home_sel = (int)(intptr_t)lv_event_get_user_data(e);
+    const char *err = menu_start(apps_list[home_sel].path);
+    if (err) { app_err = home_sel; snprintf(app_err_text, sizeof app_err_text, "%s", err); show(); }   /* (on its row) */
+}
+static void on_focus(lv_event_t *e) { home_sel = (int)(intptr_t)lv_event_get_user_data(e); }
+static void home_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, "Homebrew Menu", apps_count ? "Y Netloader    X Settings    A Open" : "Y Netloader    X Settings");
+    for (int i = 0; i < ICONS; i++) { free((void *)icon[i].data); icon[i].data = 0; }
+    for (int i = 0; i < apps_count; i++) {
+        char t[140];
+        const app_entry_t *a = &apps_list[i];
+        const void *img = NULL;
+        if (i < ICONS && a->icon_off) {
+            uint8_t *px = malloc(WUP_ICON * WUP_ICON * 2);
+            if (px && apps_load_icon(i, px)) {
+                icon[i].header.magic = LV_IMAGE_HEADER_MAGIC; icon[i].header.cf = LV_COLOR_FORMAT_RGB565;
+                icon[i].header.w = icon[i].header.h = WUP_ICON; icon[i].header.stride = WUP_ICON * 2;
+                icon[i].data = px; icon[i].data_size = WUP_ICON * WUP_ICON * 2;
+                img = &icon[i];
+            } else free(px);
+        }
+        const char *sub = i == app_err ? app_err_text : a->description;
+        if (sub[0]) snprintf(t, sizeof t, "%s\n%s", a->name, sub); else snprintf(t, sizeof t, "%s", a->name);
+        lv_obj_t *b = row(l, img ? img : LV_SYMBOL_FILE, t, a->version, on_app, (void *)(intptr_t)i);
+        lv_obj_add_event_cb(b, on_focus, LV_EVENT_FOCUSED, (void *)(intptr_t)i);
+    }
+    if (!apps_count) {                              /* an empty place for an app, and three words */
+        lv_obj_set_flex_align(l, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(l, 24, 0);
+        lv_obj_t *slot = lv_obj_create(l);
+        lv_obj_remove_style_all(slot); lv_obj_set_size(slot, 96, 96); lv_obj_set_style_radius(slot, 22, 0);
+        lv_obj_set_style_border_width(slot, 3, 0); lv_obj_set_style_border_color(slot, lv_palette_main(LV_PALETTE_GREY), 0); lv_obj_set_style_border_opa(slot, LV_OPA_50, 0);
+        lv_obj_t *plus = lv_label_create(slot);
+        lv_label_set_text(plus, LV_SYMBOL_PLUS); lv_obj_set_style_text_font(plus, &inter_32, 0); lv_obj_set_style_text_opa(plus, LV_OPA_50, 0); lv_obj_center(plus);
+        lv_obj_t *t = lv_label_create(l);
+        lv_label_set_text(t, M.fs_ok ? "No Apps Installed" : "Storage Not Available"); lv_obj_set_style_text_font(t, &inter_24, 0);
+    }
+}
+
+/* ---- the menu's loop */
+static void status_text(void) {
+    char t[24];
+    if (!status) return;
+    int p = M.power.percent, on = M.ip[0] != 0, charging = M.power.charging;
+#ifdef MENU_PREVIEW                                /* (pictures from the emulator, which has no Wi-Fi) */
+    on = 1; p = 66; charging = 0;
+#endif
+    snprintf(t, sizeof t, "%s%s%s", on ? LV_SYMBOL_WIFI : "", on && charging ? "  " : "", charging ? LV_SYMBOL_CHARGE : "");
+    if (strcmp(lv_label_get_text(status), t)) lv_label_set_text(status, t);
+    lv_obj_set_width(battery, p < 0 ? 0 : 2 + p * 22 / 100);      /* (inside the body: 24 pixels at most) */
+    char c[16]; clock_text(c, sizeof c, 0);
+    if (clk && strcmp(lv_label_get_text(clk), c)) { lv_label_set_text(clk, c); if (c[0]) lv_obj_remove_flag(clk, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(clk, LV_OBJ_FLAG_HIDDEN); }
+}
+void ui_start(int selected) {
+    home_sel = selected < apps_count ? selected : 0;
+    focus_at[0] = home_sel;
+    apply_theme();
+    stack[0] = home_screen; depth = 0;
+    sound_init(); lv_group_set_focus_cb(lv_group_get_default(), on_group_focus);
+    show();
+    sys_power(&M.power); status_text();
+}
+int ui_selected(void) { return home_sel; }
+void ui_step(void) {
+    static unsigned held = ~0u; static int ticks; static char had_ip;
+    unsigned b = wup_buttons(), pressed = b & ~held; held = b;
+    if (deferred) { void (*f)(void) = deferred; deferred = 0; f(); held = wup_buttons(); return; }
+    if (pressed & WUP_A) sound_click();
+    {                                              /* the keyboard: a click for each key the selection moves to (held: each repeat) */
+        static uint32_t kb_sel; static int on_kb;
+        int here = stack[depth] == kb_screen && kb_obj;
+        uint32_t sel = here ? lv_buttonmatrix_get_selected_button(kb_obj) : LV_BUTTONMATRIX_BUTTON_NONE;
+        if (here && on_kb && sel != kb_sel && sel != LV_BUTTONMATRIX_BUTTON_NONE) sound_click();   /* (not on arriving) */
+        kb_sel = sel; on_kb = here;
+    }
+    if (stack[depth] == erasing_screen) pressed &= ~WUP_B;   /* (no way back while it erases) */
+    if (pressed & WUP_B) {
+        if (stack[depth] == netloader_screen) { wuplink_close(); nl_title = 0; }
+        pop();
+    } else if (!depth && (pressed & WUP_X)) push(settings_screen);
+    else if (!depth && (pressed & WUP_Y)) push(netloader_screen);
+    if (stack[depth] == netloader_screen) netloader_step();
+    if (++ticks % 100 == 0) { sys_power(&M.power); status_text(); }
+    /* apps copied or removed over file sharing appear by themselves: once the transfers are done and a second has
+       passed (a program often sends several files) */
+    static int changed;
+    if (ftpd_apps_changed()) changed = ticks;
+    if (changed && !ftpd_busy() && ticks - changed > 100) {
+        changed = 0;
+        apps_scan();
+        if (!depth) { if (home_sel >= apps_count) home_sel = 0; show(); }
+    }
+    if (!!M.ip[0] != had_ip) {                      /* connected or lost: what shows the state is built again */
+        had_ip = !!M.ip[0];
+        status_text();
+        if (stack[depth] == settings_screen || stack[depth] == network_screen || stack[depth] == file_sharing_screen) show();
+    }
+}

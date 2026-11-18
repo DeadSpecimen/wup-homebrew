@@ -1,0 +1,13 @@
+# CRC32 fix for WPA2-patched WIFI firmware
+# Apply AFTER the OUI patches have been applied
+#
+# The WIFI firmware has a CRC32 at offset 0x3D320 that covers
+# data[0x20:0x3D320] (skipping 32-byte header).
+#
+# After patching the 4 OUI bytes, the CRC must be updated.
+#
+# Flash address: 0x5F9630 = Partition2 (0x500000) + WIFI (0xBC310) + 0x3D320
+
+# Original CRC (before OUI patches): 0x8A7F51A5
+# New CRC (after OUI patches):       0x7C209717
+0x5F9630:A5517F8A:1797207C

@@ -1,0 +1,7 @@
+# the same bytes on Windows as on the Mac: text files keep LF line endings in every checkout
+* text=auto eol=lf
+*.patch -text
+*.png binary
+*.ttf binary
+*.bin binary
+*.wup binary

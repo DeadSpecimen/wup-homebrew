@@ -1,0 +1,60 @@
+# wup-homebrew
+
+Homebrew for the **Wii U GamePad** (model WUP-010): the **Homebrew Menu**, the SDK its apps are built with, an
+installer that puts it on a GamePad from a Wii U, streaming from a computer, and an emulator of the pad. Everything was
+worked out from the pad's own firmware, and it runs on a real GamePad.
+
+<p align="center"><img src="wup-menu/docs/images/home.png" width="427" alt="The Homebrew Menu"> <img src="wup-menu/docs/images/settings.png" width="427" alt="Settings"></p>
+
+## Get it
+
+You need a Wii U running [Aroma](https://aroma.foryour.cafe/) and its GamePad.
+
+1. Download `homebrew_menu_installer.wuhb` from [Releases](https://github.com/ravensclawx/wup-homebrew/releases) into
+   `sd:/wiiu/apps/` on the Wii U's SD card, and open **Homebrew Menu Installer** from the Wii U Menu.
+2. **Install**. Keep the GamePad charging and close to the console; it takes a couple of minutes.
+3. Turn the GamePad off, then on while holding **A**: the Homebrew Menu, with **App Store** and **Software Update**.
+   Join Wi-Fi in Settings, then get apps from the App Store.
+
+Without A the GamePad starts as always. **Remove** in the same installer puts the original firmware back.
+Use at your own risk: see the installer's [README](wup-menu-installer).
+
+## What's here
+
+| Folder | What |
+|---|---|
+| [`wup-menu`](wup-menu) | the Homebrew Menu: a small hook in the pad's firmware, the loader, the menu, App Store and Software Update, and the install tools (UART, Wi-Fi updates). Hold A at power-on |
+| [`libwup`](libwup) | the SDK: the runtime every app is built on (C library, LVGL, threads, sockets, the pad's hardware), the `.wup` app format, and the tools to build, send and debug apps |
+| [`wup-menu-installer`](wup-menu-installer) | the Homebrew Menu Installer: a Wii U app that installs the menu through the GamePad's own firmware update, no soldering (GPL, built on DRXUtil) |
+| [`wup-stream`](wup-stream) | a computer's picture, sound and controls on the GamePad: libwupstream on the computer, the WUP Stream app on the pad |
+| [`wup-emu`](wup-emu) | the GamePad emulator, running the real boot ROM and flash of your own pad |
+
+## Quick start
+
+Needs LLVM (`clang`, `ld.lld`), Python 3 with Pillow, meson and ninja. macOS: `brew install llvm lld meson ninja`.
+
+```
+cd libwup && python3 tools/wupbuild.py examples/hello      # an app -> build/apps/hello_world.wup
+python3 tools/wuplink.py build/apps/hello_world.wup         # send it to the pad (press Y in the Homebrew Menu first)
+cd ../wup-menu && python3 ../libwup/tools/wupbuild.py menu  # the menu itself
+```
+
+Install the menu on a GamePad from a Wii U ([wup-menu-installer](wup-menu-installer)) or over UART
+([wup-menu/docs/install.md](wup-menu/docs/install.md)). Each folder's README has the rest.
+
+## Notes
+
+- Only GamePad firmware LVC rev 7677 (`NR4_12_20140805_release`, Nintendo's last) is supported.
+- No Nintendo code or firmware is included; the emulator and the install tools need dumps of your own pad, kept
+  outside the repository (`wup-firmware/` next to these folders is ignored, or `WUP_FIRMWARE=path`).
+
+## Licence
+
+**GPL-3.0-or-later** ([LICENSE](LICENSE)): libwup, wup-menu, wup-stream and wup-emu. Apps built with libwup are
+therefore GPL too. `wup-menu-installer` is GPL-2.0-or-later, like DRXUtil, which it is built on.
+
+Third-party code is fetched by the builds, not kept here, each under its own licence (`libwup/tools/deps.py`):
+BearSSL, jsmn and picohttpparser (MIT), LVGL (MIT), littlefs (BSD-3-Clause), lwIP (BSD-3-Clause), picolibc (BSD),
+tinf (zlib), x264 (GPL-2.0-or-later, in libwupstream). Kept here with their own licences: the Inter fonts (SIL OFL
+1.1), Hello World's icon (Twemoji, CC-BY 4.0); App Store's and Software Update's icons are drawn with Font Awesome
+Free symbols (CC-BY 4.0, fontawesome.com).
