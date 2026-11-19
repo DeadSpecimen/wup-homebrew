@@ -235,17 +235,18 @@ static void joining_screen(lv_obj_t *scr) {         /* while it joins: no button
     char t[48]; snprintf(t, sizeof t, "Joining %s\xE2\x80\xA6", net_pick < 0 ? other.ssid : nets[net_pick].ssid);
     busy(page(scr, "Wi-Fi", ""), t, "", NULL, NULL);
 }
+static void wifi_screen(lv_obj_t *scr);
 static void do_connect(void) {
     wifi_net n = net_pick < 0 ? other : nets[net_pick];
-    fail_why = menu_connect(&n, kb_text);          /* (the list shows a checkmark on the network; if not, an alert says why) */
+    fail_why = menu_connect(&n, kb_text);          /* (joined: Network shows its name; not: an alert says why) */
     memset(kb_text, 0, sizeof kb_text);
     if (fail_why) {
         static char t[64]; int pw = !strcmp(fail_why, "Incorrect Password");
         snprintf(t, sizeof t, pw ? "Incorrect Password for \"%s\"" : "Unable to Join \"%s\"", n.ssid);
         wup_alert(t, pw ? NULL : !strcmp(fail_why, "No Address") ? "The network gave the GamePad no address" : "The GamePad joins 5 GHz networks with WPA2 security", "OK", NULL, NULL, 0);
     }
-    depth--;                                       /* (the joining screen goes: back to the list, searched again) */
-    nnets = -1;
+    depth--;                                       /* the joining screen goes. Not joined: the list as it was, to try again */
+    if (!fail_why && depth > 0 && stack[depth] == wifi_screen) depth--;   /* joined: back to Network, which names it */
     show();
 }
 static void start_join(void) {
