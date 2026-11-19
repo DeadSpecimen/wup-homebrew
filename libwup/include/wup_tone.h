@@ -35,14 +35,19 @@ static inline void make_click(int16_t out[2 * CLICK]) {
     for (int i = 0; i < CLICK; i++) out[2 * i] = out[2 * i + 1] = render(v, 2, i);
 }
 
+/* the two notes, made as they are queued, 240 frames at a time (no buffer kept: 60 KB would be the App Store's whole
+   margin of memory). queue: wup_audio_queue */
 #define TWO_NOTES 7680                              /* 0.16 s */
-static inline void make_two_notes(int16_t out[2 * TWO_NOTES], int alert) {
-    voice_t v[2];
+static inline void play_two_notes(int alert, int (*queue)(const int16_t *lr, int frames)) {
+    voice_t v[2]; int16_t buf[2 * 240];
     if (alert) { tone(&v[0], 2129557746, 4225, 3200, 0, 1073369229); tone(&v[1], 2139492403, 2824, 3200, 80 * 48, 1073369229); }     /* B5, E5: each gone in 60 ms */
     else { tone(&v[0], 2115578141, 5627, 3600, 0, 1073369229); tone(&v[1], 2096910565, 7069, 3600, 70 * 48, 1073369229); }           /* E6, G#6 */
-    for (int i = 0; i < TWO_NOTES; i++) {
-        int16_t y = render(v, 2, i);
-        if (i > TWO_NOTES - 480) y = (int16_t)(y * (TWO_NOTES - i) / 480);
-        out[2 * i] = out[2 * i + 1] = y;
+    for (int t = 0; t < TWO_NOTES; t += 240) {
+        for (int i = 0; i < 240; i++) {
+            int16_t y = render(v, 2, t + i);
+            if (t + i > TWO_NOTES - 480) y = (int16_t)(y * (TWO_NOTES - t - i) / 480);
+            buf[2 * i] = buf[2 * i + 1] = y;
+        }
+        if (queue(buf, 240) < 240) break;           /* (no room: the rest is dropped) */
     }
 }

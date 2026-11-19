@@ -18,11 +18,10 @@ int kit_dark(void) { return (ui & WUP_UI_SET) && (ui & WUP_UI_DARK); }
 static lv_color_t ink(void) { return kit_dark() ? lv_color_hex(0xf2f2f2) : lv_color_hex(0x202124); }
 static lv_color_t paper(void) { return kit_dark() ? lv_color_hex(0x15171a) : lv_color_white(); }
 
-static int16_t two_notes[2][2 * TWO_NOTES];
 static void kit_note_sound(int notice) {             /* an alert or a notice appears (wup_alert_sound) */
     if (ui & WUP_UI_QUIET) return;
     if (!audio_on) audio_on = wup_audio_open() == 0;
-    if (audio_on) wup_audio_queue(two_notes[notice != 0], TWO_NOTES);
+    if (audio_on) play_two_notes(!notice, wup_audio_queue);
 }
 void kit_click(void) {
     static uint32_t last;
@@ -206,7 +205,7 @@ void kit_start(kit_screen first) {
 #if defined(WUP_KIT_PREVIEW) || defined(CATALOG_PREVIEW)
     if (!wup_time_known()) wup_time_set(1794994860, 0);   /* (9:41, as the menu's MENU_PREVIEW) */
 #endif
-    make_click(click); make_two_notes(two_notes[0], 1); make_two_notes(two_notes[1], 0); wup_alert_sound = kit_note_sound;
+    make_click(click); wup_alert_sound = kit_note_sound;
     wup_lvgl_init();
     lv_display_t *d = lv_display_get_default();
     lv_display_set_theme(d, lv_theme_default_init(d, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED), kit_dark(), &inter_20));

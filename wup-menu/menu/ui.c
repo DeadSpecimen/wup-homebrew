@@ -161,12 +161,57 @@ static void kb_event(lv_event_t *e) {
         if ((int)strlen(t) < kb_min && !(kb_or_empty && !t[0])) return;   /* (a WPA2 password: 8 or more) */
         strncpy(kb_text, t, sizeof kb_text - 1); kb_text[sizeof kb_text - 1] = 0;
         defer(kb_done);
-    } else defer(pop);
+    } else if (!lv_event_get_param(e)) defer(pop); /* the keyboard's own "put away" key. (B, which LVGL also reports as a
+                                                      cancel, is kb_buttons': it deletes, or with nothing typed goes back) */
+}
+/* The GamePad's buttons type too, as on other consoles' keyboards: B deletes (with nothing typed: back), Y a space, X
+   capitals, - symbols, + done, L and R move through the text. Each of those keys carries its button, small, in its
+   corner (drawn as the key is: the keyboard has no place for children on its keys). */
+static lv_obj_t *kb_ta;
+static const char *kb_button(const char *key) {
+    static const struct { const char *key, *button; } of[] = { { LV_SYMBOL_BACKSPACE, "B" }, { " ", "Y" }, { "ABC", "X" }, { "abc", "X" }, { "1#", "-" },
+                                                               { LV_SYMBOL_OK, "+" }, { LV_SYMBOL_LEFT, "L" }, { LV_SYMBOL_RIGHT, "R" } };
+    for (unsigned i = 0; key && i < sizeof of / sizeof of[0]; i++) if (!strcmp(key, of[i].key)) return of[i].button;
+    return NULL;
+}
+static void kb_draw(lv_event_t *e) {
+    lv_draw_task_t *t = lv_event_get_draw_task(e);
+    lv_draw_dsc_base_t *base = lv_draw_task_get_draw_dsc(t);
+    if (!base || base->part != LV_PART_ITEMS || lv_draw_task_get_type(t) != LV_DRAW_TASK_TYPE_FILL) return;
+    const char *b = kb_button(lv_buttonmatrix_get_button_text(lv_event_get_target(e), base->id1));
+    if (!b) return;
+    lv_area_t a, at; lv_draw_task_get_area(t, &a);
+    at.x1 = a.x1 + 5; at.y1 = a.y1 + 5; at.x2 = at.x1 + 17; at.y2 = at.y1 + 17;
+    lv_draw_rect_dsc_t r; lv_draw_rect_dsc_init(&r);
+    r.bg_color = M.cfg.light ? lv_color_hex(0x202124) : lv_color_hex(0xf2f2f2); r.bg_opa = LV_OPA_70; r.radius = LV_RADIUS_CIRCLE;
+    lv_draw_rect(base->layer, &r, &at);
+    lv_draw_label_dsc_t l; lv_draw_label_dsc_init(&l);
+    l.font = &inter_hud; l.color = M.cfg.light ? lv_color_white() : lv_color_hex(0x15171a); l.text = b; l.align = LV_TEXT_ALIGN_CENTER;
+    at.y1 += (18 - lv_font_get_line_height(&inter_hud)) / 2;
+    lv_draw_label(base->layer, &l, &at);
+}
+static void kb_buttons(unsigned pressed, unsigned *left) {   /* the buttons that type; *left: what is for the rest of the menu */
+    lv_obj_t *kb = kb_obj, *ta = kb_ta;
+    *left = pressed & ~(WUP_B | WUP_Y | WUP_X | WUP_MINUS | WUP_PLUS | WUP_L | WUP_R);
+    if (pressed & (WUP_B | WUP_Y | WUP_X | WUP_MINUS | WUP_PLUS | WUP_L | WUP_R)) sound_click();
+    if (pressed & WUP_B) { if (lv_textarea_get_text(ta)[0]) lv_textarea_delete_char(ta); else *left |= WUP_B; }   /* (nothing typed: back) */
+    if (pressed & WUP_Y) lv_textarea_add_char(ta, ' ');
+    if (pressed & WUP_L) lv_textarea_cursor_left(ta);
+    if (pressed & WUP_R) lv_textarea_cursor_right(ta);
+    if (pressed & (WUP_X | WUP_MINUS)) {
+        lv_keyboard_mode_t m = lv_keyboard_get_mode(kb), to;
+        if (pressed & WUP_X) to = m == LV_KEYBOARD_MODE_TEXT_LOWER ? LV_KEYBOARD_MODE_TEXT_UPPER : LV_KEYBOARD_MODE_TEXT_LOWER;
+        else to = m == LV_KEYBOARD_MODE_SPECIAL ? LV_KEYBOARD_MODE_TEXT_LOWER : LV_KEYBOARD_MODE_SPECIAL;
+        uint32_t sel = lv_buttonmatrix_get_selected_button(kb);
+        lv_keyboard_set_mode(kb, to);
+        lv_buttonmatrix_set_selected_button(kb, sel == LV_BUTTONMATRIX_BUTTON_NONE ? 0 : sel);     /* (the selection stays where it was) */
+    }
+    if (pressed & WUP_PLUS) lv_obj_send_event(kb, LV_EVENT_READY, NULL);
 }
 static void kb_screen(lv_obj_t *scr) {
     lv_obj_t *t = lv_label_create(scr);
     lv_label_set_text(t, kb_title); lv_obj_align(t, LV_ALIGN_TOP_LEFT, 32, 20);
-    lv_obj_t *ta = lv_textarea_create(scr);
+    lv_obj_t *ta = kb_ta = lv_textarea_create(scr);
     lv_textarea_set_one_line(ta, true); lv_textarea_set_max_length(ta, (uint32_t)kb_max); lv_textarea_set_placeholder_text(ta, kb_hint);
     lv_obj_set_width(ta, 790); lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 60);
     lv_group_remove_obj(ta);
@@ -176,7 +221,10 @@ static void kb_screen(lv_obj_t *scr) {
     lv_obj_add_event_cb(kb, kb_event, LV_EVENT_READY, ta); lv_obj_add_event_cb(kb, kb_event, LV_EVENT_CANCEL, ta);
     lv_obj_set_style_outline_width(kb, 0, LV_STATE_FOCUS_KEY); lv_obj_set_style_border_width(kb, 0, LV_STATE_FOCUS_KEY);   /* (no focus line: it is all there is) */
     lv_obj_set_style_outline_width(kb, 0, LV_STATE_FOCUSED); lv_obj_set_style_border_width(kb, 0, 0);
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS); lv_obj_add_event_cb(kb, kb_draw, LV_EVENT_DRAW_TASK_ADDED, NULL);
     lv_group_focus_obj(kb);
+    lv_buttonmatrix_set_selected_button(kb, 1); lv_obj_add_state(kb, LV_STATE_FOCUS_KEY);   /* a key is selected from the start (the
+                                                       keyboard only does that itself when a button press brought it up) */
 }
 static void ask_text(const char *title, const char *hint, int min, int max, int or_empty, void (*done)(void)) {
     snprintf(kb_title, sizeof kb_title, "%s", title); kb_done = done; memset(kb_text, 0, sizeof kb_text);
@@ -569,6 +617,7 @@ void ui_step(void) {
     }
     if (stack[depth] == erasing_screen) pressed &= ~WUP_B;   /* (no way back while it erases) */
     if (stack[0] == setup_screen) pressed = 0;                /* (setting up: nothing to press) */
+    if (stack[depth] == kb_screen && kb_obj) kb_buttons(pressed, &pressed);   /* the keyboard: B, Y, X, -, +, L and R type */
     if (pressed & WUP_B) {
         if (stack[depth] == netloader_screen) { wuplink_close(); nl_title = 0; }
         pop();

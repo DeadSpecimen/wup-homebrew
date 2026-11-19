@@ -10,7 +10,7 @@
 
 #include "wup_tone.h"
 
-static int16_t click[2 * CLICK], two[2][2 * TWO_NOTES];   /* two: for an alert, for a notice */
+static int16_t click[2 * CLICK];
 #define CHIME (48000 * 3 / 2)                       /* 1.5 s */
 static voice_t chime[8];
 static int ready, open_;
@@ -22,7 +22,7 @@ static int on(void) {
     return 1;
 }
 void sound_init(void) {
-    make_click(click); make_two_notes(two[0], 1); make_two_notes(two[1], 0);
+    make_click(click);
     ready = 1;
 }
 static int chime_thread = -1;
@@ -77,5 +77,5 @@ void sound_click(void) {
 }
 void sound_note(int notice) {                       /* an alert or a notice appears (wup_alert_sound) */
     if (!ready || M.cfg.sound_off || !on()) return;
-    wup_audio_queue(two[notice != 0], TWO_NOTES);
+    play_two_notes(!notice, wup_audio_queue);
 }
