@@ -223,6 +223,16 @@ static void kb_screen(lv_obj_t *scr) {
     lv_obj_set_style_outline_width(kb, 0, LV_STATE_FOCUSED); lv_obj_set_style_border_width(kb, 0, 0);
     lv_obj_add_flag(kb, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS); lv_obj_add_event_cb(kb, kb_draw, LV_EVENT_DRAW_TASK_ADDED, NULL);
     lv_group_focus_obj(kb);
+    /* the text's cursor: a thin line, blinking, where the next letter goes. (The text box is not what the buttons move
+       in, the keyboard is: it is given the state its cursor shows in, and the cursor its look, by hand) */
+    lv_obj_add_state(ta, LV_STATE_FOCUSED);
+    for (int st = 0; st < 2; st++) {
+        lv_style_selector_t c = (lv_style_selector_t)LV_PART_CURSOR | (st ? LV_STATE_FOCUSED : 0);
+        lv_obj_set_style_bg_opa(ta, LV_OPA_TRANSP, c);
+        lv_obj_set_style_border_side(ta, LV_BORDER_SIDE_LEFT, c); lv_obj_set_style_border_width(ta, 2, c);
+        lv_obj_set_style_border_color(ta, lv_palette_main(LV_PALETTE_BLUE), c); lv_obj_set_style_border_opa(ta, LV_OPA_COVER, c);
+        lv_obj_set_style_anim_duration(ta, 530, c);        /* (on, off: about a second) */
+    }
     lv_buttonmatrix_set_selected_button(kb, 1); lv_obj_add_state(kb, LV_STATE_FOCUS_KEY);   /* a key is selected from the start (the
                                                        keyboard only does that itself when a button press brought it up) */
 }
