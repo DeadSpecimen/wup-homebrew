@@ -18,6 +18,7 @@ APPS = [   # (folder, category, licence)
     (os.path.join(ROOT, 'apps', 'app_store'), 'system', 'GPL-3.0-or-later'),          # (system: Software Update's,
     (os.path.join(ROOT, 'apps', 'software_update'), 'system', 'GPL-3.0-or-later'),    #  not listed in the App Store)
     (os.path.join(PROJECTS, 'wup-stream', 'pad'), 'tool', 'GPL-3.0-or-later'),
+    (os.path.join(ROOT, 'apps', 'wup_boy'), 'emu', 'GPL-3.0-or-later', [('player', 'player.wup'), ('testrom.py', 'roms/Test Pattern.gb')]),   # (+ its player, and a test game made here)
 ]
 
 
@@ -48,16 +49,21 @@ def main():
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(paths.local_out(), 'repo')
     shutil.rmtree(out, ignore_errors=True); os.makedirs(os.path.join(out, 'zips'))
     packages = []
-    for d, category, licence in APPS:
-        c = cfg(d)
+    def built(d):
         r = subprocess.run([sys.executable, os.path.join(paths.LIBWUP, 'tools', 'wupbuild.py'), d], capture_output=True, text=True, cwd=ROOT)
         m = re.search(r'(\S+\.wup) \(', r.stdout)
         if r.returncode or not m: sys.exit('%s did not build:\n%s' % (d, r.stdout[-2000:] + r.stderr[-2000:]))
+        return open(m.group(1), 'rb').read()
+    def made(script):                                  # (a file a script writes to standard output)
+        return subprocess.run([sys.executable, script], capture_output=True, check=True).stdout
+    for d, category, licence, *more in APPS:
+        c = cfg(d)
         wid = c['name'].replace(' ', '_').lower()
-        wup = open(m.group(1), 'rb').read()
+        wup = built(d)
         icon = os.path.join(d, c['icon']) if c.get('icon') else None
         packages.append(pkg(out, wid, c['name'], c.get('author', ''), c.get('version', '1.0'), category, c.get('description', ''),
-                            licence, [('apps/%s/%s.wup' % (wid, wid), wup, zipfile.ZIP_STORED)], icon))
+                            licence, [('apps/%s/%s.wup' % (wid, wid), wup, zipfile.ZIP_STORED)]
+                            + [('apps/%s/%s' % (wid, name), made(os.path.join(d, sub)) if sub.endswith('.py') else built(os.path.join(d, sub)), zipfile.ZIP_STORED) for sub, name in (more[0] if more else [])], icon))
         print('  %-18s %s' % (wid, c.get('version')))
     from mkflash import build_menu, menu_header        # the Homebrew Menu itself (stored: it is deflated already)
     menu, stored = build_menu()
