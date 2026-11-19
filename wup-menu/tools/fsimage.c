@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
         if (lfs_format(&fs, &cfg) || lfs_mount(&fs, &cfg)) { fprintf(stderr, "format failed\n"); return 1; }
         printf("formatted (%u blocks)\n", blocks);
     }
-    lfs_mkdir(&fs, "/apps"); lfs_mkdir(&fs, "/save"); lfs_mkdir(&fs, "/roms");
+    lfs_mkdir(&fs, "/apps"); lfs_mkdir(&fs, "/save");
     if (argc == 4 && !strcmp(argv[2], "--ls")) {                     /* list a folder */
         lfs_dir_t d; struct lfs_info inf;
         if (lfs_dir_open(&fs, &d, argv[3])) { fprintf(stderr, "%s: no such folder\n", argv[3]); return 1; }

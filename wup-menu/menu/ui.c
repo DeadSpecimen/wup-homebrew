@@ -376,7 +376,7 @@ static void on_erase(lv_event_t *e) { (void)e; push(erasing_screen); defer(do_er
 static void reset_screen(lv_obj_t *scr) {
     lv_obj_t *l = page(scr, "Reset", "B Back    A Select");
     row(l, LV_SYMBOL_TRASH, "Erase All Content and Settings", NULL, on_erase, NULL);
-    note(l, "Apps, their data, Wi-Fi and all settings are erased. The Homebrew Menu stays installed.");
+    note(l, "Apps, their data, Wi-Fi and all settings are erased. The Homebrew Menu, App Store and Software Update stay.");
 }
 
 /* ---- the Netloader: an app sent from a computer (tools/wuplink.py). One thing in the middle of the screen: a

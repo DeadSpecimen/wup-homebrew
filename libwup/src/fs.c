@@ -141,19 +141,13 @@ int fs_mount(int *formatted) {
     return 0;
 }
 #ifndef FS_NO_FORMAT
-static int used_block(void *data, lfs_block_t b) { uint8_t *map = data; if (b < 2048) map[b >> 3] |= (uint8_t)(1 << (b & 7)); return 0; }
-int fs_erase(void (*tick)(void)) {                    /* the menu's Reset: an empty filesystem; mounted again at the next start */
-    static uint8_t map[2048 / 8];                     /* the blocks in use, erased (nothing left behind); the rest is free */
-    memset(map, 0, sizeof map);
-    if (!ext[0].lo && place(0)) return LFS_ERR_IO;    /* (never mounted: where it would be; not known: nothing erased) */
-    int whole = !mounted || lfs_fs_traverse(&fs_lfs, used_block, map) < 0;   /* (unreadable: all of it) */
+int fs_erase(void (*tick)(void)) {                    /* an empty filesystem (the menu, when there is none to walk); mounted again
+                                                         at the next start. The old blocks are not erased one by one (minutes):
+                                                         they are free, and erased as they are used again */
+    (void)tick;
+    if (!ext[0].lo && place(0)) return LFS_ERR_IO;    /* (never mounted: where it would be; not known: nothing touched) */
     if (mounted) { lfs_unmount(&fs_lfs); mounted = 0; }
     cfg.block_count = total_blocks();
-    for (lfs_block_t b = 0; b < cfg.block_count; b++) {
-        if (!whole && !(map[b >> 3] & (1 << (b & 7)))) continue;
-        if (bd_erase(&cfg, b)) return LFS_ERR_IO;
-        if (tick) tick();
-    }
     return lfs_format(&fs_lfs, &cfg);
 }
 #endif

@@ -16,7 +16,7 @@ TOPDIR ?= $(CURDIR)
 APP_NAME		:=	Homebrew Menu Installer
 APP_SHORTNAME		:=	Homebrew Menu Installer
 APP_AUTHOR		:=	wup-homebrew
-APP_VERSION		:=	1.0.2
+APP_VERSION		:=	1.0.3
 
 include $(DEVKITPRO)/wut/share/wut_rules
 

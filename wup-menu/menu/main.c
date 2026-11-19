@@ -167,16 +167,43 @@ const char *menu_install_received(int run) {
     return run ? menu_start(path) : 0;
 }
 
-/* Reset: the apps, their data, the clock and file sharing settings (the filesystem) and the menu's settings (Wi-Fi
-   too) are erased. The menu itself and the firmware stay. The GamePad is then turned off by hand: the next start is a
-   new pad's. < 0 if something could not be erased. */
+/* Reset: the apps and their data, the clock and file sharing settings (the files) and the menu's settings (Wi-Fi too)
+   go. The menu, the firmware and the system's own apps stay: App Store and Software Update, with their records, so
+   that a reset pad can still get apps and updates. Files are removed, not the flash under them erased block by block
+   (that took minutes with a few MB stored). The GamePad is then turned off by hand: the next start is a new pad's.
+   < 0 if something could not be removed. */
+static const char *const kept[] = { "/apps/app_store", "/apps/software_update", "/.get/packages/app_store", "/.get/packages/software_update", "/.get/bundled" };
+static int is_kept(const char *p) {
+    for (unsigned i = 0; i < sizeof kept / sizeof kept[0]; i++) { size_t n = strlen(kept[i]); if (!strncmp(p, kept[i], n) && (!p[n] || p[n] == '/')) return 1; }
+    return 0;
+}
+static int wipe(const char *dir, int depth, void (*tick)(void)) {    /* everything in dir but what is kept; < 0: could not */
+    static char path[8][192];
+    if (depth >= 8) return -1;
+    for (int skip = 0;;) {                             /* (one entry at a time: a folder is not walked while it changes) */
+        lfs_dir_t d; struct lfs_info inf; int found = 0, n = 0;
+        if (lfs_dir_open(&fs_lfs, &d, dir)) return -1;
+        while (lfs_dir_read(&fs_lfs, &d, &inf) > 0) {
+            if (!strcmp(inf.name, ".") || !strcmp(inf.name, "..")) continue;
+            if (n++ < skip) continue;
+            snprintf(path[depth], sizeof path[0], "%s%s%s", dir, dir[1] ? "/" : "", inf.name); found = 1; break;
+        }
+        lfs_dir_close(&fs_lfs, &d);
+        if (!found) return 0;
+        if (is_kept(path[depth])) { skip++; continue; }
+        if (inf.type == LFS_TYPE_DIR) wipe(path[depth], depth + 1, tick);
+        if (lfs_remove(&fs_lfs, path[depth])) skip++;      /* (a folder with something kept in it stays) */
+        if (tick) tick();
+    }
+}
 int menu_reset(void (*tick)(void)) {
     wuplink_close();
     if (ftp_open) { ftpd_close(); ftp_open = 0; }
     if (dbg_open) { dbgsrv_close(); dbg_open = 0; }
     sound_off();
-    int r = (fs_erase(tick) ? -1 : 0) | (config_erase() ? -2 : 0);
-    M.fs_ok = 0;
+    int r = M.fs_ok ? wipe("/", 0, tick) : -1;
+    if (r) r = fs_erase(tick) ? -1 : 0;                /* (no filesystem to walk: a new, empty one) */
+    r |= config_erase() ? -2 : 0;
     printf("[menu] reset %d\n", r);
     return r;
 }
