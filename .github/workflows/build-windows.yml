@@ -1,5 +1,5 @@
 # Proof that the pad side builds on Windows x64 the way the README sets it up: the official LLVM for
-# Windows, Python with Pillow, git. Builds libwup's example and tests, the Homebrew Menu and WUP Stream; they are a run artifact.
+# Windows, Python with Pillow, git. Builds libwup's example and tests, the Homebrew Menu, App Store and Software Update; they are a run artifact.
 name: Build (Windows)
 on:
   workflow_dispatch:
@@ -7,7 +7,6 @@ on:
     paths:
       - 'libwup/**'
       - 'wup-menu/**'
-      - 'wup-stream/pad/**'
       - '.github/workflows/build-windows.yml'
 permissions:
   contents: read
@@ -29,7 +28,7 @@ jobs:
           if (-not (Test-Path "$env:ProgramFiles\LLVM\bin\ld.lld.exe")) { choco install llvm -y --no-progress }
           & "$env:ProgramFiles\LLVM\bin\clang.exe" --version
 
-      - name: Example, tests, menu, WUP Stream
+      - name: Example, tests, menu, its apps
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -37,7 +36,7 @@ jobs:
           python tools/wupbuild.py examples/hello;    if ($LASTEXITCODE) { exit 1 }
           foreach ($t in 'sdk', 'lvgl', 'kernel', 'pthread', 'sockets') { python tools/wupbuild.py tests/$t; if ($LASTEXITCODE) { exit 1 } }
           cd ../wup-menu;   python ../libwup/tools/wupbuild.py menu; if ($LASTEXITCODE) { exit 1 }
-          cd ../wup-stream; python ../libwup/tools/wupbuild.py pad;  if ($LASTEXITCODE) { exit 1 }
+          foreach ($a in 'app_store', 'software_update') { python ../libwup/tools/wupbuild.py apps/$a; if ($LASTEXITCODE) { exit 1 } }
           cd ..; Get-ChildItem */build/apps/*.wup | Format-Table Name, Length
 
       - uses: actions/upload-artifact@v4

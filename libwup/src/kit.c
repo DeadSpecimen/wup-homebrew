@@ -1,10 +1,10 @@
-/* kit: see kit.h. The parts are the menu's (menu/ui.c), sizes and colours the same. */
+/* kit: see include/wup_kit.h. The parts are the menu's (menu/ui.c), sizes and colours the same. */
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include "kit.h"
+#include "wup_kit.h"
 #include "handoff.h"
-#include "tone.h"
+#include "wup_tone.h"
 
 #define HUD 20                                       /* the size of everything in the bars, as in the menu */
 static kit_screen stack[8];
@@ -32,7 +32,7 @@ void kit_click(void) {
 static void status_text(void) {
     if (!status) return;
     int charging = 0, p = wup_battery(&charging), on = wup_wifi_rssi() != 0;
-#ifdef CATALOG_PREVIEW                             /* (pictures from wup-emu, which has no Wi-Fi: as the menu's MENU_PREVIEW) */
+#if defined(WUP_KIT_PREVIEW) || defined(CATALOG_PREVIEW)   /* (pictures from wup-emu, which has no Wi-Fi: as the menu's MENU_PREVIEW) */
     on = 1; p = 66; charging = 0;
 #endif
     char t[24];
@@ -197,7 +197,7 @@ static void on_focus(lv_group_t *g) { (void)g; if (!quiet) kit_click(); }
 void kit_start(kit_screen first) {
     const wup_handoff_t *pb = wup_handoff();
     ui = pb ? pb->ui : 0;
-#ifdef CATALOG_PREVIEW
+#if defined(WUP_KIT_PREVIEW) || defined(CATALOG_PREVIEW)
     if (!wup_time_known()) wup_time_set(1794994860, 0);   /* (9:41, as the menu's MENU_PREVIEW) */
 #endif
     make_click(click);

@@ -8,7 +8,7 @@
  *          Installing... (with a bar) / Removing... -> back to the list (Installed under the version), or why not */
 #include <stdio.h>
 #include <string.h>
-#include "kit.h"
+#include "wup_kit.h"
 #include "catalog.h"
 #include "fs.h"
 

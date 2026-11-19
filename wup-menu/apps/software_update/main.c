@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "kit.h"
+#include "wup_kit.h"
 #include "catalog.h"
 #include "handoff.h"
 #include "wup_system.h"

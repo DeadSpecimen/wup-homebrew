@@ -20,7 +20,7 @@ DEPS = {   # name: (folder, git URL, tag/branch, license[, folders: a sparse che
     'bearssl': (os.path.join(paths.THIRD, 'bearssl'), 'https://www.bearssl.org/git/BearSSL', 'v0.6', 'MIT'),
     'picohttpparser': (os.path.join(paths.THIRD, 'picohttpparser'), 'https://github.com/h2o/picohttpparser.git', 'dd573d8fa9264c646a400e96ce9f07dea6f156e4', 'MIT or Perl'),
     'jsmn': (os.path.join(paths.THIRD, 'jsmn'), 'https://github.com/zserge/jsmn.git', 'v1.1.0', 'MIT'),
-    # WUP Boy (wup-menu/apps/wup_boy): the emulator core and its sound (examples/sdl2/minigb_apu: no SDL in it)
+    # WUP Boy (its own repository, github.com/ravensclawx/wup-boy): the emulator core and its sound (examples/sdl2/minigb_apu: no SDL in it)
     'peanut-gb': (os.path.join(paths.THIRD, 'peanut-gb'), 'https://github.com/deltabeard/Peanut-GB.git', '33f053b9e70297ff0bab53da527c19126384d911', 'MIT'),
     'compiler-rt': (os.path.join(paths.THIRD, 'llvm'), 'https://github.com/llvm/llvm-project.git', 'llvmorg-19.1.7', 'Apache-2.0 WITH LLVM-exception', ['compiler-rt/lib/builtins']),
 }

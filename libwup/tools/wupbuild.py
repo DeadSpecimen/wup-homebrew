@@ -12,7 +12,7 @@ app that never uses the RGB565 screen; its .bss may fill WUP_BIGMEM), text_in_bi
 or 'lvgl' / 'bearssl', whose code and constants go in WUP_BIGMEM, loaded from the .wup by libwup before main()), text_in_app (sources whose code goes in the app
 area, when WUP_SPARE is full), thumb (yes/no), thumb_sources (these
 as Thumb -Os: smaller), deps (tools/deps.py names), net (yes: sockets; raw: lwIP's callback API, see include/wup.h), lvgl (yes: the GUI
-library, include/wup_lvgl.h), system (yes: the menu: it may format the filesystem), https (yes: wup_https.h, BearSSL; with net = yes), large (yes/no/auto:
+library, include/wup_lvgl.h), kit (yes: the Homebrew Menu's look for apps, include/wup_kit.h; brings lvgl), system (yes: the menu: it may format the filesystem), https (yes: wup_https.h, BearSSL; with net = yes), large (yes/no/auto:
 code in WUP_SPARE (368 KB), constants and stack at 0x350000, .bss in WUP_BIGMEM below the screen (heap after
 it: wup_bigmem_free); auto = only when it does not fit).
 SRC: .c files or directories (all their .c files). The app defines WUP_APP("Title") and main().
@@ -194,6 +194,8 @@ def build_app(d):
         if 'sources' in cfg else sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith('.c'))
     drop = set(sum((glob.glob(os.path.join(d, x[1:])) for x in cfg.get('sources', '').split() if x.startswith('!')), []))
     srcs = [os.path.normpath(s) for s in srcs if s not in drop]   # '!pattern' leaves files out
+    kit = cfg.get('kit', 'no') == 'yes'
+    if kit: srcs.append(os.path.join(paths.SRC, 'kit.c'))        # the menu's look for apps (include/wup_kit.h)
     name = cfg.get('name') or os.path.basename(d)
     lg = cfg.get('large', 'auto')
     pats = cfg.get('thumb_sources', '').split()               # '!pattern' excludes (hot code stays ARM)
@@ -206,7 +208,7 @@ def build_app(d):
     thumb_srcs = {os.path.normpath(x) for x in thumb_srcs}; app_text = {os.path.normpath(x) for x in app_text}
     code, big = build(srcs, name, None, [os.path.join(d, x) for x in cfg.get('include', '').split()], cfg.get('defines', '').split(),
                  cfg.get('thumb', 'no') == 'yes', {'yes': True, 'raw': 'raw'}.get(cfg.get('net', 'no'), False), None if lg == 'auto' else lg == 'yes', thumb_srcs,
-                 cfg.get('cflags', '').split(), cfg.get('screen8', 'no') == 'yes', app_text, cfg.get('lvgl', 'no') == 'yes', cfg.get('system', 'no') == 'yes', big_text,
+                 cfg.get('cflags', '').split(), cfg.get('screen8', 'no') == 'yes', app_text, kit or cfg.get('lvgl', 'no') == 'yes', cfg.get('system', 'no') == 'yes', big_text,
                  cfg.get('https', 'no') == 'yes')
     icon = os.path.join(d, cfg['icon']) if cfg.get('icon') else None
     author, version = cfg.get('author', ''), cfg.get('version', '1.0')

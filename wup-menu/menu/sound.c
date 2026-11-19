@@ -8,7 +8,7 @@
 #include "menu.h"
 #include "dbgsrv.h"
 
-#include "../common/tone.h"
+#include "wup_tone.h"
 
 static int16_t click[2 * CLICK];
 #define CHIME (48000 * 3 / 2)                       /* 1.5 s */

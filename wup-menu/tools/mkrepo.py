@@ -14,11 +14,13 @@ import paths
 ROOT = os.path.dirname(HERE)
 PROJECTS = os.path.dirname(ROOT)
 
-APPS = [   # (folder, category, licence)
+HOME = 'https://github.com/ravensclawx/wup-homebrew'      # (an app's own: url in its app.cfg)
+
+APPS = [   # (folder, category, licence[, more files])
     (os.path.join(ROOT, 'apps', 'app_store'), 'system', 'GPL-3.0-or-later'),          # (system: Software Update's,
     (os.path.join(ROOT, 'apps', 'software_update'), 'system', 'GPL-3.0-or-later'),    #  not listed in the App Store)
-    (os.path.join(PROJECTS, 'wup-stream', 'pad'), 'tool', 'GPL-3.0-or-later'),
-    (os.path.join(ROOT, 'apps', 'wup_boy'), 'emu', 'GPL-3.0-or-later', [('player', 'player.wup')]),   # (+ its player, next to it)
+    (os.path.join(PROJECTS, 'wup-stream', 'pad'), 'tool', 'GPL-3.0-or-later'),                              # (its own repository, next to this one)
+    (os.path.join(PROJECTS, 'wup-boy'), 'emu', 'GPL-3.0-or-later', [('player', 'player.wup')]),          # (its own repository, next to this one)
 ]
 
 
@@ -29,7 +31,7 @@ def cfg(d):
     return c
 
 
-def pkg(out, name, title, author, version, category, description, licence, files, icon):
+def pkg(out, name, title, author, version, category, description, licence, files, icon, url=''):
     z = io.BytesIO()
     with zipfile.ZipFile(z, 'w', zipfile.ZIP_DEFLATED) as zf:
         for path, data, how in files: zf.writestr(zipfile.ZipInfo(path, (2026, 1, 1, 0, 0, 0)), data, compress_type=how)
@@ -39,7 +41,7 @@ def pkg(out, name, title, author, version, category, description, licence, files
         os.makedirs(os.path.join(out, 'packages', name), exist_ok=True)
         shutil.copy(icon, os.path.join(out, 'packages', name, 'icon.png'))
     return {'name': name, 'title': title, 'author': author, 'version': version, 'category': category, 'license': licence,
-            'description': description, 'details': description, 'changelog': '', 'url': '', 'screens': 0, 'app_dls': 0,
+            'description': description, 'details': description, 'changelog': '', 'url': url, 'screens': 0, 'app_dls': 0,
             'md5': hashlib.md5(data).hexdigest(), 'filesize': (len(data) + 1023) // 1024,
             'extracted': (sum(len(f[1]) for f in files) + 1023) // 1024,
             'binary': files[0][0] if files[0][0].startswith('apps/') else '', 'updated': datetime.date.today().strftime('%d/%m/%Y')}
@@ -63,7 +65,7 @@ def main():
         icon = os.path.join(d, c['icon']) if c.get('icon') else None
         packages.append(pkg(out, wid, c['name'], c.get('author', ''), c.get('version', '1.0'), category, c.get('description', ''),
                             licence, [('apps/%s/%s.wup' % (wid, wid), wup, zipfile.ZIP_STORED)]
-                            + [('apps/%s/%s' % (wid, name), made(os.path.join(d, sub)) if sub.endswith('.py') else built(os.path.join(d, sub)), zipfile.ZIP_STORED) for sub, name in (more[0] if more else [])], icon))
+                            + [('apps/%s/%s' % (wid, name), made(os.path.join(d, sub)) if sub.endswith('.py') else built(os.path.join(d, sub)), zipfile.ZIP_STORED) for sub, name in (more[0] if more else [])], icon, c.get('url', HOME)))
         print('  %-18s %s' % (wid, c.get('version')))
     from mkflash import build_menu, menu_header        # the Homebrew Menu itself (stored: it is deflated already)
     menu, stored = build_menu()
@@ -72,7 +74,7 @@ def main():
         if w.startswith('MENU_VERSION='): version = w.split('=', 1)[1].strip('"')
     slot = menu_header(menu, stored).ljust(0x1000, b'\xff') + stored
     packages.append(pkg(out, 'homebrew_menu', 'Homebrew Menu', 'wup-homebrew', version, 'system', 'The Homebrew Menu',
-                        'GPL-3.0-or-later', [('homebrew_menu.bin', slot, zipfile.ZIP_STORED)], None))
+                        'GPL-3.0-or-later', [('homebrew_menu.bin', slot, zipfile.ZIP_STORED)], None, HOME))
     print('  %-18s %s' % ('homebrew_menu', version))
     json.dump({'packages': packages}, open(os.path.join(out, 'repo.json'), 'w'), indent=1)
     print('%s: %d packages' % (out, len(packages)))

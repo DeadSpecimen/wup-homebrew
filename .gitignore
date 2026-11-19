@@ -6,3 +6,6 @@ __pycache__/
 /wup-homebrew-apps/
 # working notes for Claude Code: local only
 CLAUDE.md
+# apps with repositories of their own, checked out next to the platform
+/wup-boy/
+/wup-stream/

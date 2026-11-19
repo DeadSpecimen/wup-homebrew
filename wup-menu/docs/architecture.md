@@ -10,7 +10,7 @@ underneath (its drivers are what libwup calls) and is otherwise untouched. Only 
 | `menu/` | The Homebrew Menu, an app like the others: `main.c` (state, network, apps), `ui.c` (LVGL screens), `wifi/`, `ftpd.c`, `wuplink.c` (the Netloader), `dbgsrv.c` (Developer Mode) |
 | `tools/` | `mkflash.py` (the install, and emulator images), `menu_install.py` (updates over Wi-Fi), `mkinstaller.py` (the Wii U installer's payload), `flash/` (the UART install) |
 | `apps/` | App Store and Software Update (the Wii U install's bundle brings them; `menu/bundle.c` puts them on the pad once) |
-| `common/` | what the menu and its apps share: `kit.c` (the menu's look for apps), `catalog.c` (the catalogue: libget's format), `tone.h`, `version.h` |
+| `common/` | what the menu and its apps share: `catalog.c` (the catalogue: libget's format), `tone.h`, `version.h` |
 
 Built with [libwup](../../libwup) (next to this folder): the runtime, its headers
 (`handoff.h`, `wupfmt.h`: shared with the loader), the app tools, and the docs on writing apps and the firmware's

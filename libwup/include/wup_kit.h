@@ -1,8 +1,11 @@
-/* kit: the Homebrew Menu's look for its apps (App Store, Software Update): the same bars, status, rows, notes, button
- * hints, spinner and clicks as the menu (menu/ui.c), its theme and sound setting from the hand-off block. LVGL.
+/* wup_kit: the Homebrew Menu's look for apps (app.cfg: kit = yes; it brings LVGL): the same bars, status (Wi-Fi,
+ * battery, clock), rows, notes, button hints, spinner and clicks as the menu, its theme and sound setting from the
+ * hand-off block. Screens are a stack; B goes back, and at the first screen ends the app.
  *
  *   static void home(lv_obj_t *scr) { lv_obj_t *l = kit_page(scr, "Title", "B Back    A Select"); kit_row(l, ...); }
- *   int main(void) { kit_start(home); while (kit_step()) {} return 0; }      B at the first screen ends the app */
+ *   int main(void) { kit_start(home); while (kit_step()) {} return 0; }
+ *
+ * No popups: an outcome is a screen (kit_outcome) or a row's value. Used by App Store, Software Update and WUP Boy. */
 #pragma once
 #include "wup.h"
 #include "wup_lvgl.h"
