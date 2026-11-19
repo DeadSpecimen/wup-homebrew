@@ -46,15 +46,23 @@ Nothing in the boot chain checks signatures or checksums:
 Nintendo's partitions (kuribo64.net/wup FLASH layout): SPL 0x0, ErrorLog 0xE000, Bank 0xF000, Product1 0x100000,
 Product2 0x500000, Lang1 0x900000, Lang2 0x1100000, TVcode 0x1900000, Screen1/2 0x1B00000 / 0x1B80000, Service
 0x1C00000, diagnostics from 0x1FDE000. Ours: the gap between Bank and Product1 (blank on a stock pad), the hook's two
-patches in a firmware bank, and Lang2 for the filesystem.
+patches in a firmware bank, and the spare language copy for the filesystem.
 
-**Lang2.** The pad keeps its own message screens (pairing, errors, updating, low battery, the TV remote: pictures, in
-every language) twice, like its firmware. The firmware's update receiver (LVC 0x2b0c0) writes each kind of update to
-its area (type 5: the firmware bank; 0: language; 1: TV codes; 2: Service; 3/4: Screen1/2). Checked in wup-emu with
-every flash read logged (FLASH_LOG), on stock starts, pairing, the TV remote and the menu: the pad reads Lang1 only,
-never Lang2, and blanking Lang2 changes nothing (blanking Lang1 blanks its message screens). A language update comes
-only when the console updates a pad older than itself; 7677 is the last firmware, and the installers send firmware
-only. Were one ever sent, it would put a complete language copy over the files: lost files, a working pad.
+**The filesystem's place.** The pad keeps its own message screens (pairing, errors, updating, low battery, the TV
+remote: pictures, in every language) twice, like its firmware: Lang1 and Lang2. A selector in its settings memory (the
+UIC's EEPROM; the firmware's cache of it + 0x256: selector, version, CRC-16) says which copy it uses: 1 = Lang2, anything
+else = Lang1 (the reader at boot, LVC 0x3a93a). A language update (type 0 of the update receiver, LVC 0x2b0c0) is written
+to the other copy and the selector flipped, so which copy is in use differs from pad to pad. The filesystem lives in the
+copy **not** in use, asked of the firmware every time it is mounted (`libwup/src/fs.c`); if the firmware cannot say, there
+is no filesystem. Checked in wup-emu with every flash read logged: selector 0 reads Lang1 only, selector 1 reads Lang2
+only; the menu on a pad using Lang2 formats Lang1 and leaves Lang2 alone. No language update comes to these pads
+(firmware 7677 is Nintendo's last; the installers send firmware only). Were one sent, it would replace the files with a
+complete language copy and flip the selector: lost files, a working pad.
+
+Homebrew Menu 1.0.0 always took Lang2. On a pad using Lang2 that formatted over the screens in use: the pad still works
+with its console, but shows a blank screen for its own messages. 1.0.1 recognises such a pad (the copy in use holds our
+filesystem, the other one does not) and points the selector at the other copy, whole and only older, with the firmware's
+own setter (LVC 0x3baa4); the files stay.
 
 | Flash | Contents |
 |---|---|
@@ -64,7 +72,7 @@ only. Were one ever sent, it would put a complete language copy over the files: 
 | 0x30000 / 0x31000 | menu slot (to 0x8FFFF, 380 KB): header `{"WMNU", stored size, crc32, inflated size, stamp}` / menu image |
 | bank + 0x2C9000 | the Wii U install's bundle, after the firmware's last section: loader, menu header sector, menu image, then App Store and Software Update (a "WAPS" table and their .wup files) |
 | 0xB0000, 0xB1000 | menu settings (two `WCFG` records with sequence number and CRC) |
-| 0x1100000-0x18FFFFF | littlefs in **Lang2** (8 MB): `/apps`, app data. Lang2 is the spare copy of the pad's message screens (Lang1 is the one it reads); only a language update would write it, and our pads never get one (see below) |
+| 0x900000-0x10FFFFF or 0x1100000-0x18FFFFF | littlefs (8 MB: `/apps`, app data) in whichever of **Lang1 / Lang2** the pad does not use for its message screens (see below) |
 | 0x12000-0x2FFFF, 0x90000-0xAFFFF, 0xB2000-0xFFFFF | free (the filesystem until 2026-11-18) |
 
 A stock GamePad firmware update (or the installer's Remove) writes the other bank without the hook; everything in

@@ -1,10 +1,18 @@
-/* fs: littlefs in Lang2, the GamePad's spare copy of its language data (0x1100000-0x18FFFFF, 8 MB in one piece).
- * The pad keeps its message screens (in every language) twice, like its firmware: Lang1 is the copy it reads, Lang2 the
- * copy a language update would be written to. Derived from the firmware and checked in wup-emu (FLASH_LOG): normal
- * starts, pairing, the TV remote and the menu read Lang1 only, never Lang2; blanking Lang2 changes nothing. A language
- * update comes only from the console updating a pad older than itself (with firmware and message screens); firmware
- * 7677 is Nintendo's last, and the installers (ours, DRXUtil) send firmware only. Were one ever sent, it would replace
- * these files with a complete language copy: lost files, a working pad.
+/* fs: littlefs in the GamePad's spare copy of its language data (8 MB in one piece).
+ * The pad keeps its message screens (pairing, errors, low battery...: pictures, in every language) twice, like its
+ * firmware: Lang1 (0x900000-0x10FFFFF) and Lang2 (0x1100000-0x18FFFFF). A selector in its settings memory (the UIC's
+ * EEPROM, the firmware's cache of it + 0x256: selector, 3 bytes of version, CRC-16) says which one it uses: 1 = Lang2,
+ * anything else = Lang1 (the reader at boot, LVC 0x3a93a). A language update is written to the other copy and the
+ * selector flipped (LVC 0x2b146, 0x2baf0): so which copy is in use differs from pad to pad. Checked in wup-emu with
+ * every flash read logged (FLASH_LOG): selector 0: 362 reads in Lang1, none in Lang2; selector 1: 264 in Lang2, none in
+ * Lang1; and a pad whose copy in use is not language data shows a blank grey screen for every message.
+ * So: the filesystem lives in the copy the pad does NOT use, asked of the firmware each time (LVC 0x3ba48); if it
+ * cannot say, there is no filesystem: never a guess. (Homebrew Menu 1.0.0 always took Lang2: on a pad using Lang2 it
+ * formatted over the screens in use. Such a pad is recognised, the copy in use holding our filesystem and the other
+ * one not, and the menu repairs it: the selector is pointed at the other copy, whole and only older, with the
+ * firmware's own setter (LVC 0x3baa4); the files stay where they are.)
+ * No language update comes to these pads (firmware 7677 is Nintendo's last; the installers send firmware only). Were
+ * one sent, it would replace these files with a complete language copy and flip the selector: lost files, a working pad.
  * The rest of ours stays in the gap below Product1 (0x10000-0xFFFFF): the loader, the menu slot, the menu's settings.
  * The flash driver DMAs: data passes through the uncached buffer at 0x220000. */
 #include <stdint.h>
@@ -23,9 +31,7 @@ typedef int (*er_fn)(u32 h, u32 first, u32 count);
 #endif
 #define BOUNCE ((u8 *)FS_BOUNCE)
 
-static const struct { u32 lo, hi; } ext[] = {
-    { 0x1100000, 0x1900000 },                         /* Lang2 (tools: wup-menu/tools/fsimage.c has the same) */
-};
+static struct { u32 lo, hi; } ext[1];              /* where the filesystem is: place() (tools: wup-menu/tools/fsimage.c) */
 #define NEXT (int)(sizeof ext / sizeof ext[0])
 static u32 block_addr(lfs_block_t b) {
     for (int i = 0; i < NEXT; i++) { u32 n = (ext[i].hi - ext[i].lo) >> 12; if (b < n) return ext[i].lo + (b << 12); b -= n; }
@@ -60,6 +66,50 @@ static int bd_erase(const struct lfs_config *c, lfs_block_t b) {
 }
 static int bd_sync(const struct lfs_config *c) { (void)c; return 0; }
 
+/* ---- which copy: the firmware's selector, and what the two copies hold */
+#define LANG1 0x900000u
+#define LANG2 0x1100000u
+#define LANG_SIZE 0x800000u
+typedef struct { u8 selector; u8 pad[3]; u32 version; } lang_t;
+#define FW_LANG_GET ((int (*)(lang_t *))0x0003ba49)       /* 0: read (from the EEPROM cache); else not loaded */
+#define FW_LANG_SET ((int (*)(const lang_t *))0x0003baa5) /* into the cache and the EEPROM, with its CRC */
+static int has_fs(u32 base) {                         /* littlefs's superblock: "littlefs" at +8 of block 0 or 1 */
+    u32 done;
+    for (int b = 0; b < 2; b++) {
+        if (FL_READ(HANDLE, base + (u32)b * 4096, BOUNCE, 16, &done)) return -1;
+        if (!memcmp(BOUNCE + 8, "littlefs", 8)) return 1;
+    }
+    return 0;
+}
+static int has_screens(u32 base) {                    /* language data: how many pictures (the boot reader's first word), then their table */
+    u32 done, n;
+    if (FL_READ(HANDLE, base, BOUNCE, 4, &done)) return 0;
+    memcpy(&n, BOUNCE, 4);
+    return n >= 1 && n <= 1024;
+}
+/* -> ext[]; 0, or < 0: not known (no filesystem). repair: the menu, which may put a 1.0.0-damaged pad right */
+static int place(int repair) {
+    lang_t l = { 0 };
+    if (FW_LANG_GET(&l)) return -1;
+    u32 used = l.selector == 1 ? LANG2 : LANG1, spare = used == LANG2 ? LANG1 : LANG2, at = spare;
+    int fu = has_fs(used), fsp = has_fs(spare);
+    if (fu < 0 || fsp < 0) return -1;
+    if (fu == 1 && fsp == 0) {                         /* the copy in use holds our files (1.0.0 on a pad using Lang2) */
+        at = used;                                     /* the files stay; with the selector on the other copy it is the spare again */
+#ifndef FS_NO_FORMAT
+        if (repair && has_screens(spare)) {
+            lang_t to = { (u8)(spare == LANG2 ? 1 : 0), { 0 }, l.version }, now = { 0 };
+            FW_LANG_SET(&to);
+            if (FW_LANG_GET(&now) || now.selector != to.selector) at = used;   /* (not taken: as it was) */
+        }
+#else
+        (void)repair; (void)has_screens;
+#endif
+    }
+    ext[0].lo = at; ext[0].hi = at + LANG_SIZE;
+    return 0;
+}
+
 static u8 rbuf[256], pbuf[256], lbuf[64] __attribute__((aligned(4)));
 static struct lfs_config cfg = {
     .read = bd_read, .prog = bd_prog, .erase = bd_erase, .sync = bd_sync,
@@ -71,8 +121,9 @@ lfs_t fs_lfs;
 static int mounted;
 
 int fs_mount(int *formatted) {
-    cfg.block_count = total_blocks();
     *formatted = 0;
+    if (place(1)) return LFS_ERR_IO;                  /* (which copy is the spare is not known: nothing is touched) */
+    cfg.block_count = total_blocks();
     int r = lfs_mount(&fs_lfs, &cfg);
 #ifdef FS_NO_FORMAT
     if (r) return r;                                  /* apps never format: only the menu may */
@@ -94,6 +145,7 @@ static int used_block(void *data, lfs_block_t b) { uint8_t *map = data; if (b < 
 int fs_erase(void (*tick)(void)) {                    /* the menu's Reset: an empty filesystem; mounted again at the next start */
     static uint8_t map[2048 / 8];                     /* the blocks in use, erased (nothing left behind); the rest is free */
     memset(map, 0, sizeof map);
+    if (!ext[0].lo && place(0)) return LFS_ERR_IO;    /* (never mounted: where it would be; not known: nothing erased) */
     int whole = !mounted || lfs_fs_traverse(&fs_lfs, used_block, map) < 0;   /* (unreadable: all of it) */
     if (mounted) { lfs_unmount(&fs_lfs); mounted = 0; }
     cfg.block_count = total_blocks();

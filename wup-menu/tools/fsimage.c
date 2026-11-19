@@ -8,9 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "lfs.h"
-static const struct { unsigned lo, hi; } ext[] = {
-    /* as libwup/src/fs.c (keep both the same) */
-    { 0x1100000, 0x1900000 },                         /* Lang2 */
+static struct { unsigned lo, hi; } ext[] = {
+    { 0x1100000, 0x1900000 },                         /* Lang2: the spare copy on a pad using Lang1 (libwup/src/fs.c);
+                                                         WUP_FS_LANG1=1: Lang1, for a pad using Lang2 */
 };
 #define NEXT (int)(sizeof ext / sizeof ext[0])
 static unsigned char *flash;
@@ -27,6 +27,7 @@ static int pr(const struct lfs_config *c, lfs_block_t b, lfs_off_t o, const void
 static int er(const struct lfs_config *c, lfs_block_t b) { memset(flash + block_addr(b), 0xff, 4096); return 0; }
 static int sy(const struct lfs_config *c) { return 0; }
 int main(int argc, char **argv) {
+    if (getenv("WUP_FS_LANG1")) { ext[0].lo = 0x900000; ext[0].hi = 0x1100000; }
     if (argc < 2) { fprintf(stderr, "usage: %s flash.bin [--format] /dest=src ...\n", argv[0]); return 1; }
     FILE *f = fopen(argv[1], "rb"); if (!f) { perror(argv[1]); return 1; }
     flash = malloc(0x2000000); size_t got = fread(flash, 1, 0x2000000, f); fclose(f);
