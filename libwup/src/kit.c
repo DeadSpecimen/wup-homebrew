@@ -44,6 +44,10 @@ static void status_text(void) {
     snprintf(t, sizeof t, "%s%s%s", on ? LV_SYMBOL_WIFI : "", on && charging ? "  " : "", charging ? LV_SYMBOL_CHARGE : "");
     if (strcmp(lv_label_get_text(status), t)) lv_label_set_text(status, t);
     lv_obj_set_width(battery, p < 0 ? 0 : 2 + p * 22 / 100);
+    {                                              /* charging: the bolt alone; not: the battery alone */
+        lv_obj_t *whole = lv_obj_get_parent(lv_obj_get_parent(battery));
+        if (charging) lv_obj_add_flag(whole, LV_OBJ_FLAG_HIDDEN); else lv_obj_remove_flag(whole, LV_OBJ_FLAG_HIDDEN);
+    }
     char c[16] = "";
     if (wup_time_known()) {
         time_t now = time(NULL); struct tm tm; localtime_r(&now, &tm);
