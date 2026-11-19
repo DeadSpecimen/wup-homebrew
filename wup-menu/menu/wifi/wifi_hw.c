@@ -215,3 +215,4 @@ int wifi_mac(u8 *mac) {
     bcopy_(mac, iobuf, 6);
     return r;
 }
+int wifi_leave(void) { return ioctl_(52 /* WLC_DISASSOC */, 0, 0, 0, 1); }

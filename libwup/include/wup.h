@@ -137,6 +137,7 @@ void wup_irq_restore(unsigned state);                /* ... and as it was */
 int wup_net_init(void);                              /* 0, or < 0: the menu was not connected to Wi-Fi */
 int wup_net_start(const uint8_t mac[6]);             /* (the menu) the stack on the radio, no address yet */
 int wup_net_dhcp(void);                              /* (the menu) ask the joined network for an address */
+void wup_net_leave(void);                            /* (the menu) the address given back: the network is being left */
 void wup_net_info(uint32_t *ip, uint32_t *mask, uint32_t *gw, uint32_t *dns);
 int wup_net_online(void);
 uint32_t wup_net_ip(void);                           /* the pad's address (network byte order) */

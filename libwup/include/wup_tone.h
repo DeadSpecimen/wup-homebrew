@@ -51,3 +51,18 @@ static inline void play_two_notes(int alert, int (*queue)(const int16_t *lr, int
         if (queue(buf, 240) < 240) break;           /* (no room: the rest is dropped) */
     }
 }
+
+/* an app opens: three notes rising, quick (E5, B5, E6: the chime's first three), 0.24 s; made as they are queued */
+#define LAUNCH 11520
+static inline void play_launch(int (*queue)(const int16_t *lr, int frames)) {
+    voice_t v[3]; int16_t buf[2 * 240];
+    tone(&v[0], 2139492403, 2824, 3000, 0, 1073369229); tone(&v[1], 2129557746, 4225, 3000, 60 * 48, 1073369229); tone(&v[2], 2115578141, 5627, 3200, 120 * 48, 1073492520);
+    for (int t = 0; t < LAUNCH; t += 240) {
+        for (int i = 0; i < 240; i++) {
+            int16_t y = render(v, 3, t + i);
+            if (t + i > LAUNCH - 960) y = (int16_t)(y * (LAUNCH - t - i) / 960);
+            buf[2 * i] = buf[2 * i + 1] = y;
+        }
+        if (queue(buf, 240) < 240) break;
+    }
+}

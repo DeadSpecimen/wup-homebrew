@@ -9,6 +9,7 @@ int wifi_bringup(const char *country);            /* 0 = interface up */
 int wifi_scan(wifi_net *out, int max);            /* 5 GHz networks, strongest first; < 0 = error */
 int wifi_join(const wifi_net *net, const u8 *pmk);/* pmk = NULL for an open network */
 int wifi_associated(const wifi_net *net);
+int wifi_leave(void);                             /* off the network it is on */
 int wifi_rssi(void);
 int wifi_mac(u8 *mac);
 int wifi_chip_read(u32 addr, void *out, u32 n);

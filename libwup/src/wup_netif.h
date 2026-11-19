@@ -8,6 +8,7 @@ void wup_netif_stop(void);
 void wup_netif_on_tick(void (*fn)(void));   /* called every time the radio is served, with lwIP's lock held (libwup: the log) */
 void wup_netif_tx_pacing(unsigned rate_x10, unsigned burst);   /* frames/ms x10, frames at once (0: keep) */                /* unhook: the radio's frames are dropped again */
 int wup_netif_dhcp(void);                 /* started with address 0: ask for one */
+void wup_netif_leave(void);                /* the address given back, none held (the network is left) */
 void wup_netif_netinfo(uint32_t *ip, uint32_t *mask, uint32_t *gw);
 int wup_netif_up(void);
 uint32_t wup_netif_ip(void);

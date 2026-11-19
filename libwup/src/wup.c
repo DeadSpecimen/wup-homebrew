@@ -236,7 +236,16 @@ void wup_audio_close(void) {
     au_on = 0; au_wr = -1;
 }
 
-unsigned wup_buttons(void) { return (unsigned)(FW_BUTTONS[0] << 8 | FW_BUTTONS[1]); }
+/* Each button's change is taken at once, and then that button is not listened to for 25 ms: a contact that bounces as
+   it closes or opens is one press, not two, and nothing is delayed. */
+unsigned wup_buttons(void) {
+    static unsigned stable; static uint32_t at[16];
+    unsigned raw = (unsigned)(FW_BUTTONS[0] << 8 | FW_BUTTONS[1]), diff = (raw ^ stable) & 0xffff;
+    uint32_t now = wup_us();
+    for (int i = 0; diff; i++, diff >>= 1)
+        if ((diff & 1) && (!at[i] || now - at[i] > 25000)) { stable ^= 1u << i; at[i] = now | 1; }
+    return stable;
+}
 int wup_stick(int which, int axis) {
     int i = which * 2 + axis, off = 6 + 2 * i;
     return (int)(FW_REPORT[off] | FW_REPORT[off + 1] << 8) - 0x800 - stick_rest[i & 3];

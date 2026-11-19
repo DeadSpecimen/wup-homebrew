@@ -306,10 +306,49 @@ static void start_join(void) {
     stack[++depth] = joining_screen; focus_at[depth] = 0; show();
     defer(do_connect);
 }
+/* the network the pad is on: what it was given there, and a way off it (as a console shows its connection) */
+static void forget_go(void) {
+    static char t[56]; snprintf(t, sizeof t, "Forgot \"%s\"", M.cfg.ssid);
+    menu_forget();
+    if (depth > 0) depth--;                        /* (its page goes: the list, searched again) */
+    nnets = -1; show();
+    wup_notice(t, 1);
+}
+static void on_forget(lv_event_t *e) {
+    (void)e; static char t[56]; snprintf(t, sizeof t, "Forget \"%s\"", M.cfg.ssid);
+    wup_alert(t, "The GamePad leaves this network and no longer joins it by itself", "Forget", "Cancel", forget_go, 1);
+}
+static void on_nothing(lv_event_t *e) { (void)e; }   /* (a row that can be moved to, so the list scrolls, and does nothing) */
+static void joined_screen(lv_obj_t *scr) {
+    lv_obj_t *l = page(scr, M.cfg.ssid, "B Back    A Select");
+    uint32_t ip = 0, mask = 0, gw = 0, dns = 0; static char a[4][20], mac[20], sig[24];
+    wup_net_info(&ip, &mask, &gw, &dns);
+#ifdef MENU_PREVIEW                                /* (a picture from the emulator, which has no Wi-Fi) */
+    ip = 0x1704a8c0; mask = 0x00ffffff; gw = dns = 0x0104a8c0;
+#endif
+    const uint32_t v[4] = { ip, mask, gw, dns }; static const char *const what[4] = { "IP Address", "Subnet Mask", "Router", "DNS" };
+    for (int i = 0; i < 4; i++) {
+        snprintf(a[i], sizeof a[i], "%u.%u.%u.%u", (unsigned)(v[i] & 255), (unsigned)(v[i] >> 8 & 255), (unsigned)(v[i] >> 16 & 255), (unsigned)(v[i] >> 24));
+        row(l, NULL, what[i], v[i] ? a[i] : "\xE2\x80\x94", on_nothing, NULL);
+    }
+    uint8_t m[8] __attribute__((aligned(4))) = { 0 }; int rssi = wifi_rssi();
+#ifdef MENU_PREVIEW
+    rssi = -52;
+#endif
+    if (!wifi_mac(m)) { snprintf(mac, sizeof mac, "%02X:%02X:%02X:%02X:%02X:%02X", m[0], m[1], m[2], m[3], m[4], m[5]); row(l, NULL, "Wi-Fi Address", mac, on_nothing, NULL); }
+    if (rssi < 0) { snprintf(sig, sizeof sig, "%s (%d dBm)", rssi > -60 ? "Strong" : rssi > -72 ? "Good" : "Weak", rssi); row(l, NULL, "Signal", sig, on_nothing, NULL); }
+    row(l, NULL, "Security", M.cfg.secured ? "WPA2" : "None", on_nothing, NULL);
+    row(l, LV_SYMBOL_TRASH, "Forget This Network", NULL, on_forget, NULL);
+}
+static void on_joined(lv_event_t *e) { (void)e; push(joined_screen); }
 static void on_net(lv_event_t *e) {
     net_pick = (int)(intptr_t)lv_event_get_user_data(e);
     const wifi_net *n = &nets[net_pick];
-    if (M.ip[0] && !strcmp(n->ssid, M.cfg.ssid)) return;        /* already on it */
+    int on_it = M.ip[0] && !strcmp(n->ssid, M.cfg.ssid);
+#ifdef MENU_PREVIEW
+    on_it = !strcmp(n->ssid, M.cfg.ssid);
+#endif
+    if (on_it) { push(joined_screen); return; }    /* the one it is on: its page */
     if (n->secured) { char t[64]; snprintf(t, sizeof t, "Enter the password for \"%s\"", n->ssid); ask_password(t, start_join); }
     else { kb_text[0] = 0; start_join(); }
 }
@@ -355,7 +394,7 @@ static void wifi_screen(lv_obj_t *scr) {
         listed |= here;
         row(l, here ? LV_SYMBOL_OK : LV_SYMBOL_WIFI, nets[i].ssid, NULL, on_net, (void *)(intptr_t)i);   /* (joined: a checkmark) */
     }
-    if (M.ip[0] && !listed) row(l, LV_SYMBOL_OK, M.cfg.ssid, NULL, NULL, NULL);                    /* (joined, and hiding its name) */
+    if (M.ip[0] && !listed) row(l, LV_SYMBOL_OK, M.cfg.ssid, NULL, on_joined, NULL);               /* (joined, and hiding its name) */
     lv_obj_t *o = row(l, LV_SYMBOL_WIFI, "Other\xE2\x80\xA6", NULL, on_other, NULL);
     lv_obj_set_style_opa(lv_obj_get_child(o, 0), LV_OPA_TRANSP, 0);                              /* (no symbol; its name in line with the others) */
     note(l, nnets ? "The GamePad joins 5 GHz networks." : "No networks found. The GamePad uses 5 GHz Wi-Fi only.");
@@ -524,6 +563,7 @@ static lv_image_dsc_t icon[ICONS];
 static void on_app(lv_event_t *e) {
     home_sel = (int)(intptr_t)lv_event_get_user_data(e);
     const char *err = menu_start(apps_list[home_sel].path);
+    if (!err) { sound_launch(); for (int t = 0; t < 260; t += 10) wup_lvgl_run(10); }      /* (heard before the menu goes) */
     if (err) { static char t[64]; snprintf(t, sizeof t, "\"%s\" Can't Be Opened", apps_list[home_sel].name); wup_alert(t, err, "OK", NULL, NULL, 0); }
 }
 static void on_focus(lv_event_t *e) { home_sel = (int)(intptr_t)lv_event_get_user_data(e); }

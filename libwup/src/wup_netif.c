@@ -264,6 +264,10 @@ void wup_netif_stop(void) {
 }
 
 int wup_netif_dhcp(void) { if (!up) return -1; LOCK(); link_up = 1; int r = (int)dhcp_start(&nif); UNLOCK(); return r; }      /* (the menu: after joining a network) */
+void wup_netif_leave(void) {                        /* (the menu: the network is forgotten) the address given back, none held */
+    if (!up) return;
+    LOCK(); dhcp_release_and_stop(&nif); netif_set_addr(&nif, IP4_ADDR_ANY4, IP4_ADDR_ANY4, IP4_ADDR_ANY4); link_up = 0; UNLOCK();
+}
 void wup_netif_netinfo(u32 *ip, u32 *mask, u32 *gw) {
     *ip = ip4_addr_get_u32(netif_ip4_addr(&nif)); *mask = ip4_addr_get_u32(netif_ip4_netmask(&nif)); *gw = ip4_addr_get_u32(netif_ip4_gw(&nif));
 }

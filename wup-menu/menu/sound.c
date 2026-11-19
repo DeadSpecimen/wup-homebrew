@@ -79,3 +79,7 @@ void sound_note(int notice) {                       /* an alert or a notice appe
     if (!ready || M.cfg.sound_off || !on()) return;
     play_two_notes(!notice, wup_audio_queue);
 }
+void sound_launch(void) {                           /* an app opens */
+    if (!ready || M.cfg.sound_off || !on()) return;
+    play_launch(wup_audio_queue);
+}

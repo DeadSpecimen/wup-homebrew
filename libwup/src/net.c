@@ -154,6 +154,7 @@ int wup_net_init(void) {
    what apps take over (wup_net_info -> the hand-off block) */
 int wup_net_start(const uint8_t mac[6]) { return net_up ? 0 : start(mac, 0, 0, 0, 0); }
 int wup_net_dhcp(void) { return wup_netif_dhcp(); }
+void wup_net_leave(void) { wup_netif_leave(); }
 void wup_net_info(uint32_t *ip, uint32_t *mask, uint32_t *gw, uint32_t *dns) {
     LOCK();
     const ip_addr_t *d = dns_getserver(0);

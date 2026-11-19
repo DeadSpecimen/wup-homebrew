@@ -105,8 +105,18 @@ const char *menu_connect(const wifi_net *n, const char *pass) {
     memset(pmk, 0, sizeof pmk);
     return err;
 }
+/* the saved network forgotten: off it, its address given back, nothing kept of it (its name, its key) */
+static int aj_state;
+void menu_forget(void) {
+    aj_state = 0;
+    if (radio_ready) wifi_leave();
+    if (net_started) wup_net_leave();
+    M.cfg.wifi_saved = 0; M.cfg.secured = 0; M.cfg.ssid_len = 0; memset(M.cfg.ssid, 0, sizeof M.cfg.ssid); memset(M.cfg.pmk, 0, sizeof M.cfg.pmk);
+    menu_save();
+    M.ip[0] = 0;
+}
 /* the saved network, in steps from the main loop (the menu stays usable meanwhile) */
-static int aj_state; static uint32_t aj_ticks; static wifi_net aj_net;
+static uint32_t aj_ticks; static wifi_net aj_net;
 static void autojoin_step(void) {
     switch (aj_state) {
     case 1:
