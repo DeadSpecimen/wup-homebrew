@@ -11,7 +11,7 @@ and the menu. Everything was worked out from the pad's own firmware, and it runs
 - **[WUP Boy](https://github.com/ravensclawx/wup-boy)** (in the App Store): Game Boy and Game Boy Color games you copy over File Sharing, with
   save states, rewind and fast forward. No games included.
 - **App Store** and **Software Update** in the box: apps from the project's catalogue, newer Homebrew Menus, over HTTPS.
-- **Wi-Fi** on normal WPA2 networks. **File sharing** over FTP for the pad's flash filesystem (8 MB).
+- **Wi-Fi** on normal WPA2 networks (5 GHz), also ones that hide their name (Other…). **File sharing** over FTP for the pad's flash filesystem (8 MB).
   **Netloader**: send an app from a computer and run it.
 
 Apps are built with [libwup](../libwup), the SDK; the menu itself is an app like the others.

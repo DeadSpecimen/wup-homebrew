@@ -150,14 +150,15 @@ static void apply_theme(void) {
     lv_display_set_theme(d, lv_theme_default_init(d, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED), !M.cfg.light, &inter_20));
 }
 
-/* ---- a keyboard: the Wi-Fi password, the file sharing password */
+/* ---- a keyboard: a Wi-Fi password, a hidden network's name, the file sharing password */
 static char kb_title[64], kb_text[64];
+static const char *kb_hint = "Password"; static int kb_min = 8, kb_max = 63, kb_or_empty;
 static void (*kb_done)(void);
 static void kb_event(lv_event_t *e) {
     lv_obj_t *ta = lv_event_get_user_data(e);
     if (lv_event_get_code(e) == LV_EVENT_READY) {
         const char *t = lv_textarea_get_text(ta);
-        if (strlen(t) < 8) return;                 /* (WPA2: 8 or more) */
+        if ((int)strlen(t) < kb_min && !(kb_or_empty && !t[0])) return;   /* (a WPA2 password: 8 or more) */
         strncpy(kb_text, t, sizeof kb_text - 1); kb_text[sizeof kb_text - 1] = 0;
         defer(kb_done);
     } else defer(pop);
@@ -166,7 +167,7 @@ static void kb_screen(lv_obj_t *scr) {
     lv_obj_t *t = lv_label_create(scr);
     lv_label_set_text(t, kb_title); lv_obj_align(t, LV_ALIGN_TOP_LEFT, 32, 20);
     lv_obj_t *ta = lv_textarea_create(scr);
-    lv_textarea_set_one_line(ta, true); lv_textarea_set_max_length(ta, 63); lv_textarea_set_placeholder_text(ta, "Password");
+    lv_textarea_set_one_line(ta, true); lv_textarea_set_max_length(ta, (uint32_t)kb_max); lv_textarea_set_placeholder_text(ta, kb_hint);
     lv_obj_set_width(ta, 790); lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 60);
     lv_group_remove_obj(ta);
     lv_obj_t *kb = kb_obj = lv_keyboard_create(scr);
@@ -177,10 +178,12 @@ static void kb_screen(lv_obj_t *scr) {
     lv_obj_set_style_outline_width(kb, 0, LV_STATE_FOCUSED); lv_obj_set_style_border_width(kb, 0, 0);
     lv_group_focus_obj(kb);
 }
-static void ask_password(const char *title, void (*done)(void)) {
+static void ask_text(const char *title, const char *hint, int min, int max, int or_empty, void (*done)(void)) {
     snprintf(kb_title, sizeof kb_title, "%s", title); kb_done = done; memset(kb_text, 0, sizeof kb_text);
-    push(kb_screen);
+    kb_hint = hint; kb_min = min; kb_max = max; kb_or_empty = or_empty;
+    if (stack[depth] == kb_screen) show(); else push(kb_screen);     /* (a second question: the keyboard again, empty) */
 }
+static void ask_password(const char *title, void (*done)(void)) { ask_text(title, "Password", 8, 63, 0, done); }
 
 /* the network's row: the network joined, or Not Connected */
 static const char *net_label(void) {
@@ -193,7 +196,10 @@ static const char *net_label(void) {
 /* ---- Wi-Fi */
 #define MAXN 16
 static wifi_net nets[MAXN];
-static int nnets = -1, net_pick;                   /* -1: not searched yet, -2: no Wi-Fi */
+static int nnets = -1, net_pick;                   /* -1: not searched yet, -2: no Wi-Fi. net_pick -1: other */
+static wifi_net other;                             /* a network joined by its name: one that hides it */
+static char fail_ssid[33]; static const char *fail_why;   /* how the last try to join went wrong: on that network's row
+                                                             until the next try (no popup) */
 static void spinner(lv_obj_t *parent);
 /* work in progress, the same everywhere (searching, joining, erasing): the spinner, a title ending in an ellipsis, and
    a quieter line under it. -> the title; *sub, *spin if wanted */
@@ -216,6 +222,9 @@ static void do_scan(void) {
     static const char *const sample[] = { "Home", "Home 5G Guest", "Neighbor" };
     for (nnets = 0; nnets < 3; nnets++) { memset(&nets[nnets], 0, sizeof nets[0]); strcpy(nets[nnets].ssid, sample[nnets]); nets[nnets].secured = nnets < 2; }   /* (Neighbor: open) */
     strcpy(M.cfg.ssid, "Home");
+#ifdef MENU_PREVIEW_FAIL                           /* (a picture of a join that did not work) */
+    fail_why = "Incorrect Password"; strcpy(fail_ssid, "Home 5G Guest");
+#endif
     show(); return;
 #endif
     if (menu_radio()) { nnets = -2; show(); return; }
@@ -224,12 +233,13 @@ static void do_scan(void) {
     show();
 }
 static void joining_screen(lv_obj_t *scr) {         /* while it joins: no buttons */
-    char t[48]; snprintf(t, sizeof t, "Joining %s\xE2\x80\xA6", nets[net_pick].ssid);
+    char t[48]; snprintf(t, sizeof t, "Joining %s\xE2\x80\xA6", net_pick < 0 ? other.ssid : nets[net_pick].ssid);
     busy(page(scr, "Wi-Fi", ""), t, "", NULL, NULL);
 }
 static void do_connect(void) {
-    wifi_net n = nets[net_pick];
-    menu_connect(&n, kb_text);                     /* (the list shows how it went: a checkmark on the network) */
+    wifi_net n = net_pick < 0 ? other : nets[net_pick];
+    fail_why = menu_connect(&n, kb_text);          /* (the list shows how it went: a checkmark on the network, or why not) */
+    snprintf(fail_ssid, sizeof fail_ssid, "%s", n.ssid);
     memset(kb_text, 0, sizeof kb_text);
     depth--;                                       /* (the joining screen goes: back to the list, searched again) */
     nnets = -1;
@@ -244,9 +254,18 @@ static void on_net(lv_event_t *e) {
     net_pick = (int)(intptr_t)lv_event_get_user_data(e);
     const wifi_net *n = &nets[net_pick];
     if (M.ip[0] && !strcmp(n->ssid, M.cfg.ssid)) return;        /* already on it */
+    fail_why = 0;
     if (n->secured) { char t[64]; snprintf(t, sizeof t, "Enter the password for \"%s\"", n->ssid); ask_password(t, start_join); }
     else { kb_text[0] = 0; start_join(); }
 }
+/* Other...: a network that hides its name. Its name, then its password (none: an open network) */
+static void other_pass(void) { other.secured = kb_text[0] != 0; start_join(); }
+static void other_name(void) {
+    memset(&other, 0, sizeof other); snprintf(other.ssid, sizeof other.ssid, "%s", kb_text); other.ssid_len = (u8)strlen(other.ssid);
+    char t[64]; snprintf(t, sizeof t, "Enter the password for \"%s\"", other.ssid);
+    ask_text(t, "Password", 8, 63, 1, other_pass);
+}
+static void on_other(lv_event_t *e) { (void)e; net_pick = -1; ask_text("Enter the network's name", "Network Name", 1, 32, 0, other_name); }
 /* a plain spinner: a quarter of a ring turning at one even speed (LVGL's own also grows and shrinks its arc) */
 static void spin(void *o, int32_t v) { lv_arc_set_rotation(o, v); }
 static void spinner(lv_obj_t *parent) {
@@ -272,15 +291,20 @@ static void wifi_screen(lv_obj_t *scr) {
         defer(do_scan);
         return;
     }
+    int listed = 0, failed = 0;
     for (int i = 0; i < nnets; i++) {
-        int here = M.ip[0] && !strcmp(nets[i].ssid, M.cfg.ssid);
+        int here = M.ip[0] && !strcmp(nets[i].ssid, M.cfg.ssid), bad = fail_why && !here && !strcmp(nets[i].ssid, fail_ssid);
 #ifdef MENU_PREVIEW
         here = !strcmp(nets[i].ssid, M.cfg.ssid);
 #endif
-        row(l, here ? LV_SYMBOL_OK : LV_SYMBOL_WIFI, nets[i].ssid, NULL, on_net, (void *)(intptr_t)i);   /* (joined: a checkmark) */
+        listed |= here; failed |= bad;
+        row(l, here ? LV_SYMBOL_OK : LV_SYMBOL_WIFI, nets[i].ssid, bad ? fail_why : NULL, on_net, (void *)(intptr_t)i);   /* (joined: a checkmark; not: why) */
     }
-    if (!nnets) note(l, "No networks found. The GamePad uses 5 GHz Wi-Fi only.");
-    else note(l, "The GamePad joins 5 GHz networks.");
+    if (M.ip[0] && !listed) row(l, LV_SYMBOL_OK, M.cfg.ssid, NULL, NULL, NULL);                    /* (joined, and hiding its name) */
+    else if (fail_why && !failed && fail_ssid[0]) row(l, LV_SYMBOL_WIFI, fail_ssid, fail_why, NULL, NULL);
+    lv_obj_t *o = row(l, LV_SYMBOL_WIFI, "Other\xE2\x80\xA6", NULL, on_other, NULL);
+    lv_obj_set_style_opa(lv_obj_get_child(o, 0), LV_OPA_TRANSP, 0);                              /* (no symbol; its name in line with the others) */
+    note(l, nnets ? "The GamePad joins 5 GHz networks." : "No networks found. The GamePad uses 5 GHz Wi-Fi only.");
 }
 
 /* ---- Settings */
