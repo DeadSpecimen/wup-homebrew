@@ -488,13 +488,25 @@ static void status_text(void) {
     char c[16]; clock_text(c, sizeof c, 0);
     if (clk && strcmp(lv_label_get_text(clk), c)) { lv_label_set_text(clk, c); if (c[0]) lv_obj_remove_flag(clk, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(clk, LV_OBJ_FLAG_HIDDEN); }
 }
+/* ---- the first start after a Wii U install: its apps go onto the pad (bundle.c), which takes flash its time. The
+   menu fades in as always, with this in place of the list; then the list. Nothing to press meanwhile. */
+static void setup_tick(void) { lv_timer_handler(); }   /* (between pieces: the spinner keeps turning) */
+static void setup_screen(lv_obj_t *scr) { busy(page(scr, "Homebrew Menu", ""), "Setting Up\xE2\x80\xA6", "Don't turn off the GamePad", NULL, NULL); }
+static void do_setup(void) {
+    bundle_apps(setup_tick);
+    M.setup = 0;
+    apps_scan();
+    home_sel = 0; focus_at[0] = 0; stack[0] = home_screen; depth = 0;
+    show();
+}
 void ui_start(int selected) {
     home_sel = selected < apps_count ? selected : 0;
     focus_at[0] = home_sel;
     apply_theme();
-    stack[0] = home_screen; depth = 0;
+    stack[0] = M.setup ? setup_screen : home_screen; depth = 0;
     sound_init(); lv_group_set_focus_cb(lv_group_get_default(), on_group_focus);
     show();
+    if (M.setup) defer(do_setup);
     sys_power(&M.power); status_text();
 }
 int ui_selected(void) { return home_sel; }
@@ -511,6 +523,7 @@ void ui_step(void) {
         kb_sel = sel; on_kb = here;
     }
     if (stack[depth] == erasing_screen) pressed &= ~WUP_B;   /* (no way back while it erases) */
+    if (stack[0] == setup_screen) pressed = 0;                /* (setting up: nothing to press) */
     if (pressed & WUP_B) {
         if (stack[depth] == netloader_screen) { wuplink_close(); nl_title = 0; }
         pop();

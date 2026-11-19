@@ -200,7 +200,8 @@ int main(void) {
     if (have && M.cfg.wifi_saved) aj_state = 1;
     share_load();
     clock_load();
-    if (!resumed) bundle_apps();                       /* (the Wii U install's apps, once: bundle.c) */
+    M.setup = !resumed && bundle_pending();            /* the Wii U install's apps are to be put on the pad: after the
+                                                          menu has faded in, behind "Setting Up..." (ui.c, bundle.c) */
     apps_scan();
     sys_power(&M.power);
     wup_lvgl_init();
