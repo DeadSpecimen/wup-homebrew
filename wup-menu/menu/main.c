@@ -131,7 +131,7 @@ static void autojoin_step(void) {
 /* ---- starting and installing apps */
 const char *menu_start(const char *path) {
     volatile wup_handoff_t *pb = WUP_HANDOFF;
-    if (wup_exec(path, 0)) return "This app can't be opened";
+    if (wup_exec(path, 0)) return "It may be damaged or made for another version";
     pb->flags = (radio_ready ? WUP_HO_RADIO_READY : 0) | (M.ip[0] ? WUP_HO_WIFI_JOINED : 0);
     pb->menu_sel = (uint32_t)ui_selected();
     pb->light = (uint8_t)(M.cfg.brightness * 10 + 1);

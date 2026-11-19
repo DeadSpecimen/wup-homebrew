@@ -198,8 +198,7 @@ static const char *net_label(void) {
 static wifi_net nets[MAXN];
 static int nnets = -1, net_pick;                   /* -1: not searched yet, -2: no Wi-Fi. net_pick -1: other */
 static wifi_net other;                             /* a network joined by its name: one that hides it */
-static char fail_ssid[33]; static const char *fail_why;   /* how the last try to join went wrong: on that network's row
-                                                             until the next try (no popup) */
+static const char *fail_why;                       /* how the last try to join went wrong: said in an alert */
 static void spinner(lv_obj_t *parent);
 /* work in progress, the same everywhere (searching, joining, erasing): the spinner, a title ending in an ellipsis, and
    a quieter line under it. -> the title; *sub, *spin if wanted */
@@ -223,7 +222,7 @@ static void do_scan(void) {
     for (nnets = 0; nnets < 3; nnets++) { memset(&nets[nnets], 0, sizeof nets[0]); strcpy(nets[nnets].ssid, sample[nnets]); nets[nnets].secured = nnets < 2; }   /* (Neighbor: open) */
     strcpy(M.cfg.ssid, "Home");
 #ifdef MENU_PREVIEW_FAIL                           /* (a picture of a join that did not work) */
-    fail_why = "Incorrect Password"; strcpy(fail_ssid, "Home 5G Guest");
+    wup_alert("Incorrect Password for \"Home 5G Guest\"", NULL, "OK", NULL, NULL, 0);
 #endif
     show(); return;
 #endif
@@ -238,9 +237,13 @@ static void joining_screen(lv_obj_t *scr) {         /* while it joins: no button
 }
 static void do_connect(void) {
     wifi_net n = net_pick < 0 ? other : nets[net_pick];
-    fail_why = menu_connect(&n, kb_text);          /* (the list shows how it went: a checkmark on the network, or why not) */
-    snprintf(fail_ssid, sizeof fail_ssid, "%s", n.ssid);
+    fail_why = menu_connect(&n, kb_text);          /* (the list shows a checkmark on the network; if not, an alert says why) */
     memset(kb_text, 0, sizeof kb_text);
+    if (fail_why) {
+        static char t[64]; int pw = !strcmp(fail_why, "Incorrect Password");
+        snprintf(t, sizeof t, pw ? "Incorrect Password for \"%s\"" : "Unable to Join \"%s\"", n.ssid);
+        wup_alert(t, pw ? NULL : !strcmp(fail_why, "No Address") ? "The network gave the GamePad no address" : "The GamePad joins 5 GHz networks with WPA2 security", "OK", NULL, NULL, 0);
+    }
     depth--;                                       /* (the joining screen goes: back to the list, searched again) */
     nnets = -1;
     show();
@@ -254,7 +257,6 @@ static void on_net(lv_event_t *e) {
     net_pick = (int)(intptr_t)lv_event_get_user_data(e);
     const wifi_net *n = &nets[net_pick];
     if (M.ip[0] && !strcmp(n->ssid, M.cfg.ssid)) return;        /* already on it */
-    fail_why = 0;
     if (n->secured) { char t[64]; snprintf(t, sizeof t, "Enter the password for \"%s\"", n->ssid); ask_password(t, start_join); }
     else { kb_text[0] = 0; start_join(); }
 }
@@ -291,17 +293,16 @@ static void wifi_screen(lv_obj_t *scr) {
         defer(do_scan);
         return;
     }
-    int listed = 0, failed = 0;
+    int listed = 0;
     for (int i = 0; i < nnets; i++) {
-        int here = M.ip[0] && !strcmp(nets[i].ssid, M.cfg.ssid), bad = fail_why && !here && !strcmp(nets[i].ssid, fail_ssid);
+        int here = M.ip[0] && !strcmp(nets[i].ssid, M.cfg.ssid);
 #ifdef MENU_PREVIEW
         here = !strcmp(nets[i].ssid, M.cfg.ssid);
 #endif
-        listed |= here; failed |= bad;
-        row(l, here ? LV_SYMBOL_OK : LV_SYMBOL_WIFI, nets[i].ssid, bad ? fail_why : NULL, on_net, (void *)(intptr_t)i);   /* (joined: a checkmark; not: why) */
+        listed |= here;
+        row(l, here ? LV_SYMBOL_OK : LV_SYMBOL_WIFI, nets[i].ssid, NULL, on_net, (void *)(intptr_t)i);   /* (joined: a checkmark) */
     }
     if (M.ip[0] && !listed) row(l, LV_SYMBOL_OK, M.cfg.ssid, NULL, NULL, NULL);                    /* (joined, and hiding its name) */
-    else if (fail_why && !failed && fail_ssid[0]) row(l, LV_SYMBOL_WIFI, fail_ssid, fail_why, NULL, NULL);
     lv_obj_t *o = row(l, LV_SYMBOL_WIFI, "Other\xE2\x80\xA6", NULL, on_other, NULL);
     lv_obj_set_style_opa(lv_obj_get_child(o, 0), LV_OPA_TRANSP, 0);                              /* (no symbol; its name in line with the others) */
     note(l, nnets ? "The GamePad joins 5 GHz networks." : "No networks found. The GamePad uses 5 GHz Wi-Fi only.");
@@ -396,7 +397,11 @@ static void do_erase(void) {
 static void erasing_screen(lv_obj_t *scr) {
     erase_title = busy(page(scr, "Reset", ""), "Erasing\xE2\x80\xA6", "Don't turn off the GamePad", &erase_sub, &erase_spin);
 }
-static void on_erase(lv_event_t *e) { (void)e; push(erasing_screen); defer(do_erase); }
+static void erase_go(void) { push(erasing_screen); defer(do_erase); }
+static void on_erase(lv_event_t *e) {
+    (void)e;
+    wup_alert("Erase All Content and Settings", "Apps, their data, Wi-Fi and all settings are erased. This can't be undone.", "Erase", "Cancel", erase_go, 1);
+}
 static void reset_screen(lv_obj_t *scr) {
     lv_obj_t *l = page(scr, "Reset", "B Back    A Select");
     row(l, LV_SYMBOL_TRASH, "Erase All Content and Settings", NULL, on_erase, NULL);
@@ -455,13 +460,12 @@ static void netloader_step(void) {
 }
 
 /* ---- home: the installed apps */
-static int app_err = -1; static char app_err_text[48];   /* an app that could not be opened: why, on its row */
 #define ICONS 12                                   /* icons kept in memory (8 KB each); apps after that show without */
 static lv_image_dsc_t icon[ICONS];
 static void on_app(lv_event_t *e) {
     home_sel = (int)(intptr_t)lv_event_get_user_data(e);
     const char *err = menu_start(apps_list[home_sel].path);
-    if (err) { app_err = home_sel; snprintf(app_err_text, sizeof app_err_text, "%s", err); show(); }   /* (on its row) */
+    if (err) { static char t[64]; snprintf(t, sizeof t, "\"%s\" Can't Be Opened", apps_list[home_sel].name); wup_alert(t, err, "OK", NULL, NULL, 0); }
 }
 static void on_focus(lv_event_t *e) { home_sel = (int)(intptr_t)lv_event_get_user_data(e); }
 static void home_screen(lv_obj_t *scr) {
@@ -480,7 +484,7 @@ static void home_screen(lv_obj_t *scr) {
                 img = &icon[i];
             } else free(px);
         }
-        const char *sub = i == app_err ? app_err_text : a->description;
+        const char *sub = a->description;
         if (sub[0]) snprintf(t, sizeof t, "%s\n%s", a->name, sub); else snprintf(t, sizeof t, "%s", a->name);
         lv_obj_t *b = row(l, img ? img : LV_SYMBOL_FILE, t, a->version, on_app, (void *)(intptr_t)i);
         lv_obj_add_event_cb(b, on_focus, LV_EVENT_FOCUSED, (void *)(intptr_t)i);
@@ -538,6 +542,11 @@ void ui_step(void) {
     static unsigned held = ~0u; static int ticks; static char had_ip;
     unsigned b = wup_buttons(), pressed = b & ~held; held = b;
     if (deferred) { void (*f)(void) = deferred; deferred = 0; f(); held = wup_buttons(); return; }
+    if (wup_alert_shown()) {                       /* an alert: the buttons are its own */
+        if (pressed & (WUP_A | WUP_B | WUP_LEFT | WUP_RIGHT)) sound_click();
+        wup_alert_step(pressed);
+        return;
+    }
     if (pressed & WUP_A) sound_click();
     {                                              /* the keyboard: a click for each key the selection moves to (held: each repeat) */
         static uint32_t kb_sel; static int on_kb;

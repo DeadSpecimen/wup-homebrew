@@ -5,7 +5,8 @@
  *   static void home(lv_obj_t *scr) { lv_obj_t *l = kit_page(scr, "Title", "B Back    A Select"); kit_row(l, ...); }
  *   int main(void) { kit_start(home); while (kit_step()) {} return 0; }
  *
- * No popups: an outcome is a screen (kit_outcome) or a row's value. Used by App Store, Software Update and WUP Boy. */
+ * An outcome is a screen (kit_outcome) or a row's value; a failure the user must know about, or a yes before something
+ * is destroyed, is an alert: wup_alert() (wup_lvgl.h), which kit_step() runs. Used by App Store, Software Update and WUP Boy. */
 #pragma once
 #include "wup.h"
 #include "wup_lvgl.h"

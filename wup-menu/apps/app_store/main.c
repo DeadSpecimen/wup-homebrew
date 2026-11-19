@@ -1,5 +1,5 @@
 /* App Store: the catalogue's apps (common/catalog.c) to install, update and remove, in the Homebrew Menu's look
- * (common/kit.c). Every outcome shows on a screen; no popups.
+ * (libwup's kit). Remove asks first, and what could not be done is said, in alerts.
  * The system's own packages (the Homebrew Menu, App Store, Software Update) are Software Update's: not listed here, so
  * never removed here.
  *   home   Loading... -> the apps as the menu lists them (icon, name, description, version or Update), the storage
@@ -15,7 +15,7 @@
 WUP_APP("App Store");
 
 static int loaded, load_err, pick;
-static enum { VIEW, WORKING, RESULT } app_state;
+static enum { VIEW, WORKING } app_state;
 static int removing, act_err;
 static lv_obj_t *bar;
 
@@ -33,14 +33,18 @@ static void act(void) {
     catalog_pkg *p = &catalog[pick];
     act_err = removing ? catalog_remove(p) : catalog_install(p, progress);
     if (!act_err) { if (removing) p->installed[0] = 0; else snprintf(p->installed, sizeof p->installed, "%s", p->version); }
-    bar = 0; kit_hold(0);
-    if (!act_err) { app_state = VIEW; kit_pop(); return; }   /* (done: back to the list, where the app shows Installed) */
-    app_state = RESULT;
-    kit_show();
+    bar = 0; kit_hold(0); app_state = VIEW;
+    if (!act_err) { kit_pop(); return; }                     /* (done: back to the list, where the app shows Installed) */
+    kit_show();                                              /* (not done: its page again, and an alert saying why) */
+    wup_alert(removing ? "Couldn't Remove" : "Couldn't Install", catalog_why(act_err), "OK", NULL, NULL, 0);
 }
 static void start(int remove) { removing = remove; app_state = WORKING; kit_hold(1); kit_show(); kit_defer(act); }
 static void on_install(lv_event_t *e) { (void)e; start(0); }
-static void on_remove(lv_event_t *e) { (void)e; start(1); }
+static void remove_go(void) { start(1); }
+static void on_remove(lv_event_t *e) {
+    (void)e; static char t[72]; snprintf(t, sizeof t, "Remove \"%s\"", catalog[pick].title);
+    wup_alert(t, "The app is removed from the GamePad", "Remove", "Cancel", remove_go, 1);
+}
 static void app_screen(lv_obj_t *scr) {
     catalog_pkg *p = &catalog[pick];
     char t[24];
@@ -49,12 +53,6 @@ static void app_screen(lv_obj_t *scr) {
         lv_obj_t *l = kit_page(scr, p->title, "");
         kit_busy(l, removing ? "Removing\xE2\x80\xA6" : "Installing\xE2\x80\xA6", "Don't turn off the GamePad", NULL);
         if (!removing) bar = kit_bar(l);
-        break;
-    }
-    case RESULT: {                                 /* (only when it went wrong: done goes back to the list) */
-        lv_obj_t *l = kit_page(scr, p->title, "B Back");
-        kit_outcome(l, removing ? "Couldn't Remove" : "Couldn't Install", catalog_why(act_err));
-        app_state = VIEW;                          /* (B goes back to the app) */
         break;
     }
     case VIEW: {

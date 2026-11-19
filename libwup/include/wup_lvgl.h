@@ -24,3 +24,12 @@ lv_display_t *wup_lvgl_init(void);
 void wup_lvgl_run(int ms);                 /* draw and handle input for about ms milliseconds (the system runs too) */
 lv_indev_t *wup_lvgl_touch(void);
 lv_indev_t *wup_lvgl_keys(void);
+
+/* An alert, where one is needed: something failed that the user must know about, or a step that destroys wants a yes.
+   The screen dims a little and a card fades in over it: a title, a quieter line (or NULL), and "OK", or two choices
+   (cancel != NULL). chosen() is called when the action is taken (A on it); B, or Cancel, just closes. destroys: the
+   action shows red and Cancel is the first choice. Call wup_alert_step() in the loop with the buttons newly pressed:
+   while it returns 1 an alert is up and has them (handle nothing else). Not for progress or states: those are screens. */
+void wup_alert(const char *title, const char *message, const char *ok, const char *cancel, void (*chosen)(void), int destroys);
+int wup_alert_step(unsigned pressed);
+int wup_alert_shown(void);

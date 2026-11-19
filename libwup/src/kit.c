@@ -219,6 +219,11 @@ int kit_step(void) {
     wup_lvgl_run(10);
     if (deferred) { void (*f)(void) = deferred; deferred = 0; f(); held = wup_buttons(); return 1; }
     unsigned b = wup_buttons(), pressed = b & ~held; held = b;
+    if (wup_alert_shown()) {                       /* an alert (wup_alert): the buttons are its own */
+        if (pressed & (WUP_A | WUP_B | WUP_LEFT | WUP_RIGHT)) kit_click();
+        wup_alert_step(pressed);
+        return 1;
+    }
     if (pressed & WUP_A) { kit_click(); if (on_a) { void (*f)(void) = on_a; f(); return 1; } }
     if ((pressed & WUP_B) && !held_b) {
         if (!depth) { kit_click(); return 0; }

@@ -56,7 +56,7 @@ def build(srcs, name, out, incs=(), defs=(), thumb=False, net=False, large=None,
     extra_libs = []
     if gui:                                  # LVGL (wup_lvgl.h): the library is built once (tools/lvgl.py)
         import lvgl; lvgl.ensure()
-        lib += [os.path.join(paths.SRC, 'lvgl.c')]
+        lib += [os.path.join(paths.SRC, 'lvgl.c'), os.path.join(paths.SRC, 'alert.c')]
         flags += lvgl.flags(); extra_libs = [lvgl.LIB]
     if system: lib += [os.path.join(paths.SRC, 'menu_slot.c')]   # (wup_system.h: the menu and Software Update only)
     if https:                                # HTTPS (wup_https.h): BearSSL, built once (tools/bearssl.py), and picohttpparser
