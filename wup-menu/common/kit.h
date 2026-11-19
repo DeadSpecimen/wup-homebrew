@@ -21,6 +21,7 @@ lv_obj_t *kit_page(lv_obj_t *scr, const char *title, const char *hints);   /* th
 lv_obj_t *kit_row(lv_obj_t *list, const void *icon, const char *text, const char *value, lv_event_cb_t cb, void *arg);
 void kit_note(lv_obj_t *list, const char *text);
 lv_obj_t *kit_busy(lv_obj_t *list, const char *title, const char *line, lv_obj_t **sub);   /* the spinner, a title, a line */
+void kit_empty(lv_obj_t *list, const char *title, const char *line);     /* nothing here yet: the menu's empty place and plus, a title, a line */
 void kit_outcome(lv_obj_t *list, const char *title, const char *line);   /* a title and a quieter line, centred */
 lv_obj_t *kit_bar(lv_obj_t *list);           /* a progress bar under kit_busy (0..100) */
 void kit_click(void);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """WUP Boy's test game, written here (no one else's code or pictures): a striped pattern that scrolls, so the picture,
-the pause screen, rewind and fast forward can be seen working. The App Store's package brings it as
-roms/Test Pattern.gb.      python3 testrom.py > "Test Pattern.gb" """
+the pause screen, rewind and fast forward can be seen working in wup-emu. For tests only: WUP Boy comes without
+games.      python3 testrom.py > "Test Pattern.gb" """
 import sys
 rom = bytearray(0x8000)
 rom[0x100:0x104] = bytes([0x00, 0xC3, 0x50, 0x01])            # nop; jp 0x150

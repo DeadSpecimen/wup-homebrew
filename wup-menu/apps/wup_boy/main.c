@@ -44,7 +44,7 @@ static void on_game(lv_event_t *e) {
 static void home(lv_obj_t *scr) {
     if (!wup_fs_ok()) { kit_outcome(kit_page(scr, "WUP Boy", "B Back"), "Storage Not Available", ""); return; }
     if (!ngames) {
-        kit_outcome(kit_page(scr, "WUP Boy", "B Back"), "No Games", "Copy .gb and .gbc files to apps/wup_boy/roms with File Sharing");
+        kit_empty(kit_page(scr, "WUP Boy", "B Back"), "No Games", "Add .gb and .gbc files to apps/wup_boy/roms with File Sharing");
         return;
     }
     lv_obj_t *l = kit_page(scr, "WUP Boy", "B Back    A Play");

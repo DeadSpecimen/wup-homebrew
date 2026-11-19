@@ -3,14 +3,13 @@
 Game Boy and Game Boy Color games on the Wii U GamePad, for the [Homebrew Menu](../..). Get it in the GamePad's
 **App Store**.
 
-<p align="center"><img src="../../docs/images/wup-boy-menu.png" width="427" alt="WUP Boy in the Homebrew Menu"> <img src="../../docs/images/wup-boy-games.png" width="427" alt="The games"></p>
+<p align="center"><img src="../../docs/images/wup-boy-menu.png" width="427" alt="WUP Boy in the Homebrew Menu"> <img src="../../docs/images/wup-boy-empty.png" width="427" alt="No games yet"></p>
 <p align="center"><img src="../../docs/images/wup-boy-playing.png" width="427" alt="Playing"> <img src="../../docs/images/wup-boy-pause.png" width="427" alt="Paused"></p>
 
 ## Use
 
-- **Your games**: turn on File Sharing in the menu's Settings and copy `.gb` and `.gbc` files to
-  `apps/wup_boy/roms` (FTP). Games up to 1 MB fit. No games are included, only a test pattern made for this app
-  (`testrom.py`); delete it like any other file.
+- **Your games**: WUP Boy comes without games. Turn on File Sharing in the menu's Settings and copy `.gb` and `.gbc`
+  files to `apps/wup_boy/roms` (FTP). Games up to 1 MB fit.
 - **Play**: A and B (X and Y too), **+** Start, **−** Select, the D-pad or the left stick.
 - **HOME** pauses: Resume, Save State, Load State, Restart, Quit.
 - Hold **ZL** to rewind, **ZR** to fast forward.

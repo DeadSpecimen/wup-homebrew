@@ -147,6 +147,17 @@ void kit_outcome(lv_obj_t *l, const char *title, const char *line) {
     lv_obj_t *t = lv_label_create(l); lv_obj_set_style_text_font(t, &inter_24, 0); lv_label_set_text(t, title);
     lv_obj_t *s = lv_label_create(l); lv_obj_set_style_text_opa(s, LV_OPA_60, 0); lv_label_set_text(s, line);
 }
+void kit_empty(lv_obj_t *l, const char *title, const char *line) {   /* as the menu's home with no apps: an empty place, a few words */
+    lv_obj_set_flex_align(l, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(l, 24, 0);
+    lv_obj_t *slot = lv_obj_create(l);
+    lv_obj_remove_style_all(slot); lv_obj_set_size(slot, 96, 96); lv_obj_set_style_radius(slot, 22, 0);
+    lv_obj_set_style_border_width(slot, 3, 0); lv_obj_set_style_border_color(slot, lv_palette_main(LV_PALETTE_GREY), 0); lv_obj_set_style_border_opa(slot, LV_OPA_50, 0);
+    lv_obj_t *plus = lv_label_create(slot);
+    lv_label_set_text(plus, LV_SYMBOL_PLUS); lv_obj_set_style_text_font(plus, &inter_32, 0); lv_obj_set_style_text_opa(plus, LV_OPA_50, 0); lv_obj_center(plus);
+    lv_obj_t *t = lv_label_create(l); lv_label_set_text(t, title); lv_obj_set_style_text_font(t, &inter_24, 0);
+    if (line && line[0]) { lv_obj_t *s = lv_label_create(l); lv_label_set_text(s, line); lv_obj_set_style_text_opa(s, LV_OPA_60, 0); lv_obj_set_style_margin_top(s, -14, 0); }
+}
 lv_obj_t *kit_bar(lv_obj_t *l) {
     lv_obj_t *b = lv_bar_create(l); lv_obj_set_size(b, 360, 8); lv_obj_set_style_margin_top(b, 14, 0);
     lv_bar_set_value(b, 0, LV_ANIM_OFF);

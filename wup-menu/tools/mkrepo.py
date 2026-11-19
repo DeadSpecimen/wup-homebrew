@@ -18,7 +18,7 @@ APPS = [   # (folder, category, licence)
     (os.path.join(ROOT, 'apps', 'app_store'), 'system', 'GPL-3.0-or-later'),          # (system: Software Update's,
     (os.path.join(ROOT, 'apps', 'software_update'), 'system', 'GPL-3.0-or-later'),    #  not listed in the App Store)
     (os.path.join(PROJECTS, 'wup-stream', 'pad'), 'tool', 'GPL-3.0-or-later'),
-    (os.path.join(ROOT, 'apps', 'wup_boy'), 'emu', 'GPL-3.0-or-later', [('player', 'player.wup'), ('testrom.py', 'roms/Test Pattern.gb')]),   # (+ its player, and a test game made here)
+    (os.path.join(ROOT, 'apps', 'wup_boy'), 'emu', 'GPL-3.0-or-later', [('player', 'player.wup')]),   # (+ its player, next to it)
 ]
 
 
