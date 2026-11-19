@@ -221,6 +221,9 @@ static void do_scan(void) {
     static const char *const sample[] = { "Home", "Home 5G Guest", "Neighbor" };
     for (nnets = 0; nnets < 3; nnets++) { memset(&nets[nnets], 0, sizeof nets[0]); strcpy(nets[nnets].ssid, sample[nnets]); nets[nnets].secured = nnets < 2; }   /* (Neighbor: open) */
     strcpy(M.cfg.ssid, "Home");
+#ifdef MENU_PREVIEW_NOTICE                         /* (a picture of a notice) */
+    wup_notice("Connected to \"Home\"", 1);
+#endif
 #ifdef MENU_PREVIEW_FAIL                           /* (a picture of a join that did not work) */
     wup_alert("Incorrect Password for \"Home 5G Guest\"", NULL, "OK", NULL, NULL, 0);
 #endif
@@ -248,6 +251,7 @@ static void do_connect(void) {
     depth--;                                       /* the joining screen goes. Not joined: the list as it was, to try again */
     if (!fail_why && depth > 0 && stack[depth] == wifi_screen) depth--;   /* joined: back to Network, which names it */
     show();
+    if (!fail_why) { static char t[56]; snprintf(t, sizeof t, "Connected to \"%s\"", n.ssid); wup_notice(t, 1); }
 }
 static void start_join(void) {
     if (stack[depth] == kb_screen) depth--;        /* (the keyboard goes) */
@@ -319,14 +323,19 @@ static void on_theme(lv_event_t *e) { (void)e; M.cfg.light = !M.cfg.light; menu_
 static void on_sounds(lv_event_t *e) { (void)e; M.cfg.sound_off = !M.cfg.sound_off; menu_save(); show(); }
 static void on_bright(lv_event_t *e) { (void)e; M.cfg.brightness = (uint8_t)(M.cfg.brightness % 10 + 1); hw_backlight(M.cfg.brightness * 10); menu_save(); show(); }
 static void on_share(lv_event_t *e) { (void)e; M.cfg.share_off = !M.cfg.share_off; menu_save(); show(); }
-static void share_pw_done(void) { menu_share_password(kb_text); memset(kb_text, 0, sizeof kb_text); pop(); }
+static void share_pw_done(void) { menu_share_password(kb_text); memset(kb_text, 0, sizeof kb_text); pop(); wup_notice("Password Set", 1); }
 static void on_share_pw(lv_event_t *e) { (void)e; ask_password("Choose a password for file sharing", share_pw_done); }
 static void on_login(lv_event_t *e) {
     if (!M.share_auth && !M.share_pass_set) { on_share_pw(e); return; }        /* "Password" needs one first */
     M.share_auth = !M.share_auth; menu_share_save(); show();
 }
 static void on_boot(lv_event_t *e) { (void)e; M.cfg.autoboot = !M.cfg.autoboot; menu_save(); show(); }
-static void on_dev(lv_event_t *e) { (void)e; M.cfg.debug_off = !M.cfg.debug_off; menu_save(); show(); }
+static void dev_flip(void) { M.cfg.debug_off = !M.cfg.debug_off; menu_save(); show(); }
+static void on_dev(lv_event_t *e) {
+    (void)e;
+    if (M.cfg.debug_off) wup_alert("Turn On Developer Mode", "Tools on your network can then read and change the GamePad's memory and flash", "Turn On", "Cancel", dev_flip, 0);
+    else dev_flip();
+}
 
 static void settings_screen(lv_obj_t *scr) {
     char b[8];
@@ -447,7 +456,8 @@ static void netloader_screen(lv_obj_t *scr) {
    goes wrong (no room, a damaged transfer, not an app) just closes the Netloader: the sender's side says why. */
 static void nl_leave(void) { if (stack[depth] == netloader_screen) { wuplink_close(); nl_title = 0; pop(); } }
 static void nl_log(const char *why) { wup_log("[menu] netloader: "); wup_log(why); wup_log("\n"); }   /* (the UART log has it) */
-static void nl_finish(void) { const char *err = menu_install_received(1); if (err) { nl_log(err); nl_leave(); } }
+static void nl_failed(const char *why) { nl_log(why); nl_leave(); wup_alert("Couldn't Receive the App", why, "OK", NULL, NULL, 0); }
+static void nl_finish(void) { const char *err = menu_install_received(1); if (err) nl_failed(err); }
 static void netloader_step(void) {
     const wup_status_t *s = wuplink_status();
     if (!nl_title || s->state == WUP_OFF) return;
@@ -455,7 +465,7 @@ static void netloader_step(void) {
         if (nl_state != WUP_RECEIVING) nl_show(LV_SYMBOL_DOWNLOAD, s->name[0] ? s->name : "Receiving\xE2\x80\xA6", "", 1);
         lv_bar_set_value(nl_bar, s->total ? (int32_t)((uint64_t)s->done * 100 / s->total) : 0, LV_ANIM_OFF);
     } else if (s->state == WUP_READY && nl_state != WUP_READY) defer(nl_finish);
-    else if (s->state == WUP_ERROR) { nl_log(s->error ? s->error : "transfer failed"); nl_leave(); return; }
+    else if (s->state == WUP_ERROR) { nl_failed(s->error ? s->error : "The transfer stopped"); return; }
     else if (s->state == WUP_WAITING && nl_state != WUP_WAITING) nl_waiting();
     nl_state = s->state;
 }
@@ -534,6 +544,7 @@ void ui_start(int selected) {
     apply_theme();
     stack[0] = M.setup ? setup_screen : home_screen; depth = 0;
     sound_init(); lv_group_set_focus_cb(lv_group_get_default(), on_group_focus);
+    wup_alert_sound = sound_note;
     show();
     if (M.setup) defer(do_setup);
     sys_power(&M.power); status_text();
@@ -564,15 +575,21 @@ void ui_step(void) {
     } else if (!depth && (pressed & WUP_X)) push(settings_screen);
     else if (!depth && (pressed & WUP_Y)) push(netloader_screen);
     if (stack[depth] == netloader_screen) netloader_step();
-    if (++ticks % 100 == 0) { sys_power(&M.power); status_text(); }
+    if (++ticks % 100 == 0) {
+        sys_power(&M.power); status_text();
+        static int warned;
+        if (!warned && !M.power.charging && M.power.percent >= 0 && M.power.percent <= 10) { warned = 1; wup_alert("Low Battery", "Connect the GamePad to its AC adapter", "OK", NULL, NULL, 0); }
+    }
     /* apps copied or removed over file sharing appear by themselves: once the transfers are done and a second has
        passed (a program often sends several files) */
     static int changed;
     if (ftpd_apps_changed()) changed = ticks;
     if (changed && !ftpd_busy() && ticks - changed > 100) {
         changed = 0;
+        int had = apps_count;
         apps_scan();
         if (!depth) { if (home_sel >= apps_count) home_sel = 0; show(); }
+        if (apps_count != had) wup_notice(apps_count > had ? "App Added" : "App Removed", 1);
     }
     if (!!M.ip[0] != had_ip) {                      /* connected or lost: what shows the state is built again */
         had_ip = !!M.ip[0];

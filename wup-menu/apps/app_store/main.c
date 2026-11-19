@@ -34,7 +34,11 @@ static void act(void) {
     act_err = removing ? catalog_remove(p) : catalog_install(p, progress);
     if (!act_err) { if (removing) p->installed[0] = 0; else snprintf(p->installed, sizeof p->installed, "%s", p->version); }
     bar = 0; kit_hold(0); app_state = VIEW;
-    if (!act_err) { kit_pop(); return; }                     /* (done: back to the list, where the app shows Installed) */
+    if (!act_err) {                                          /* done: back to the list, where the app shows Installed, and a word */
+        static char t[72]; snprintf(t, sizeof t, "\"%s\" %s", p->title, removing ? "Removed" : "Installed");
+        kit_pop(); wup_notice(t, 1);
+        return;
+    }
     kit_show();                                              /* (not done: its page again, and an alert saying why) */
     wup_alert(removing ? "Couldn't Remove" : "Couldn't Install", catalog_why(act_err), "OK", NULL, NULL, 0);
 }
@@ -80,6 +84,9 @@ static void on_app(lv_event_t *e) { pick = (int)(intptr_t)lv_event_get_user_data
 static void home(lv_obj_t *scr) {
     if (!loaded) { kit_busy(kit_page(scr, "App Store", ""), "Loading\xE2\x80\xA6", "", NULL); kit_defer(load); return; }
     if (load_err) { kit_outcome(kit_page(scr, "App Store", "B Back"), "Can't Load Apps", catalog_why(load_err)); return; }
+    int any = 0;
+    for (int i = 0; i < catalog_count; i++) any |= shown(&catalog[i]);
+    if (!any) { kit_empty(kit_page(scr, "App Store", "B Back"), "No Apps Yet", "New apps appear here"); return; }
     lv_obj_t *l = kit_page(scr, "App Store", "B Back    A Select");
     char t[24], note[48];
     int n = 0;
@@ -94,7 +101,7 @@ static void home(lv_obj_t *scr) {
         n++;
     }
     size_text(fs_size_kb() - fs_used_kb(), t, sizeof t);
-    snprintf(note, sizeof note, n ? "%s available on the GamePad." : "No apps yet. %s available.", t);
+    (void)n; snprintf(note, sizeof note, "%s available on the GamePad.", t);
     kit_note(l, note);
 }
 

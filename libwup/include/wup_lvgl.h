@@ -33,3 +33,7 @@ lv_indev_t *wup_lvgl_keys(void);
 void wup_alert(const char *title, const char *message, const char *ok, const char *cancel, void (*chosen)(void), int destroys);
 int wup_alert_step(unsigned pressed);
 int wup_alert_shown(void);
+/* A notice: good news (good = 1: a checkmark, e.g. Connected to "Home") or a small "could not" (0: a warning sign):
+   a dark pill above the button hints, there for a moment and gone by itself. Nothing to press; nothing stops. */
+void wup_notice(const char *text, int good);
+extern void (*wup_alert_sound)(int notice);        /* called when one appears (0 an alert, 1 a notice): the caller's sound */

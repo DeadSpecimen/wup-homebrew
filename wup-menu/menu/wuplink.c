@@ -57,31 +57,31 @@ static err_t conn_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err
                 if (hdr_got == 20 && hdr_need == 20) {
                     u32 magic, ver, namelen;
                     memcpy(&magic, hdr, 4); memcpy(&ver, hdr + 4, 4); memcpy(&st.total, hdr + 8, 4); memcpy(&want_crc, hdr + 12, 4); memcpy(&namelen, hdr + 16, 4);
-                    if (magic != 0x4c505557u || (ver & 0xffff) != 1 || namelen > 63) { reply(2); st.state = WUP_ERROR; st.error = "Not a wuplink sender"; break; }
+                    if (magic != 0x4c505557u || (ver & 0xffff) != 1 || namelen > 63) { reply(2); st.state = WUP_ERROR; st.error = "The computer did not send an app"; break; }
                     hdr_need = 20 + namelen;
                 }
                 if (hdr_got == hdr_need && hdr_need >= 20) {
                     u32 namelen = hdr_need - 20;
                     memcpy(st.name, hdr + 20, namelen); st.name[namelen] = 0;
-                    if (!st.total || st.total > STREAM_MAX) { reply(1); st.state = WUP_ERROR; st.error = "App is too big (max 1 MB)"; break; }
+                    if (!st.total || st.total > STREAM_MAX) { reply(1); st.state = WUP_ERROR; st.error = "The app is too large (1 MB at most)"; break; }
                     st.to_file = 1;
                     if (fs_ok()) fs_remove(WUPLINK_STREAM_PATH);   /* (one left from a transfer that broke off) */
-                    if (fs_ok() && !room_for(st.total)) { reply(5); st.state = WUP_ERROR; st.error = "Not Enough Space"; break; }
-                    if (st.to_file && (!fs_ok() || fs_stream_open(WUPLINK_STREAM_PATH))) { reply(1); st.state = WUP_ERROR; st.error = "Cannot store the app (filesystem)"; break; }
+                    if (fs_ok() && !room_for(st.total)) { reply(5); st.state = WUP_ERROR; st.error = "Not enough storage on the GamePad"; break; }
+                    if (st.to_file && (!fs_ok() || fs_stream_open(WUPLINK_STREAM_PATH))) { reply(1); st.state = WUP_ERROR; st.error = "Storage is not available"; break; }
                     st.done = 0; st.crc = 0; st.state = WUP_RECEIVING;
                     reply(0);
                 }
             } else if (st.state == WUP_RECEIVING) {
                 u32 k = st.total - st.done; if (k > n) k = n;
                 if (st.to_file) {
-                    if (fs_stream_write(d, k)) { fs_stream_close(); fs_remove(WUPLINK_STREAM_PATH); reply(5); st.state = WUP_ERROR; st.error = "Not Enough Space"; break; }
+                    if (fs_stream_write(d, k)) { fs_stream_close(); fs_remove(WUPLINK_STREAM_PATH); reply(5); st.state = WUP_ERROR; st.error = "Not enough storage on the GamePad"; break; }
                 }
                 st.crc = crc32_update(st.crc, d, k);
                 st.done += k; d += k; n -= k;
                 if (st.done == st.total) {
-                    if (st.to_file && fs_stream_close()) { fs_remove(WUPLINK_STREAM_PATH); reply(5); st.state = WUP_ERROR; st.error = "Not Enough Space"; }
+                    if (st.to_file && fs_stream_close()) { fs_remove(WUPLINK_STREAM_PATH); reply(5); st.state = WUP_ERROR; st.error = "Not enough storage on the GamePad"; }
                     else if (st.crc == want_crc) { reply(0); st.state = WUP_READY; }
-                    else { fs_remove(WUPLINK_STREAM_PATH); reply(4); st.state = WUP_ERROR; st.error = "Transfer damaged (CRC mismatch)"; }
+                    else { fs_remove(WUPLINK_STREAM_PATH); reply(4); st.state = WUP_ERROR; st.error = "The transfer was damaged"; }
                 }
             } else n = 0;                                   /* ignore anything after the end */
         }

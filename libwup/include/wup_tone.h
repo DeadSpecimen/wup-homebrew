@@ -1,6 +1,7 @@
 /* tone: the Homebrew Menu's sounds, made with integer maths (no samples stored, no maths library): each note a sine (a
  * two-term recurrence) with a 5 ms rise and an exponential fall. Shared by the menu (menu/sound.c) and its apps
- * (common/kit.c). The click: 8 ms at 1.6 kHz and its octave. */
+ * (libwup's kit). The click: 8 ms at 1.6 kHz and its octave. Two notes, 0.16 s, for what appears over the screen: a
+ * confirmation (E6 then G#6, rising) and an alert (B5 then E5, falling, quieter). */
 #pragma once
 #include <stdint.h>
 
@@ -32,4 +33,16 @@ static inline void make_click(int16_t out[2 * CLICK]) {
     tone(&v[1], 1961823932, 13328, 3000, 0, 1062615066);      /* and its octave */
     v[0].rise = v[1].rise = 24;
     for (int i = 0; i < CLICK; i++) out[2 * i] = out[2 * i + 1] = render(v, 2, i);
+}
+
+#define TWO_NOTES 7680                              /* 0.16 s */
+static inline void make_two_notes(int16_t out[2 * TWO_NOTES], int alert) {
+    voice_t v[2];
+    if (alert) { tone(&v[0], 2129557746, 4225, 3200, 0, 1073369229); tone(&v[1], 2139492403, 2824, 3200, 80 * 48, 1073369229); }     /* B5, E5: each gone in 60 ms */
+    else { tone(&v[0], 2115578141, 5627, 3600, 0, 1073369229); tone(&v[1], 2096910565, 7069, 3600, 70 * 48, 1073369229); }           /* E6, G#6 */
+    for (int i = 0; i < TWO_NOTES; i++) {
+        int16_t y = render(v, 2, i);
+        if (i > TWO_NOTES - 480) y = (int16_t)(y * (TWO_NOTES - i) / 480);
+        out[2 * i] = out[2 * i + 1] = y;
+    }
 }

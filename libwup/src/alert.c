@@ -1,13 +1,16 @@
-/* wup_alert: see include/wup_lvgl.h. An alert over whatever is on screen: the screen dims a little, a card fades in
+/* wup_alert, wup_notice: see include/wup_lvgl.h. An alert over whatever is on screen: the screen dims a little, a card fades in
  * (and rises a few pixels) with a title, a quieter line and one or two choices; it leaves the same way. The buttons
  * are read here, not by LVGL (the keypad is taken off what is behind while it shows): left/right choose, A takes the
- * choice, B cancels. What was chosen is acted on from wup_alert_step(), never inside an LVGL event. */
+ * choice, B cancels. What was chosen is acted on from wup_alert_step(), never inside an LVGL event.
+ * A notice is good news (or a small "could not"): a dark pill above the button hints with a symbol and a few words,
+ * there for a moment and gone by itself; nothing to press, nothing stops. */
 #include "wup_lvgl.h"
 
 static lv_obj_t *dim, *card, *btn[2];
 static lv_group_t *nowhere, *behind;
 static void (*on_ok)(void);
 static int two, pick, danger, closing;
+void (*wup_alert_sound)(int notice);                  /* (the menu, the kit: their sound for one appearing) */
 
 static void set_opa(void *o, int32_t v) { lv_obj_set_style_bg_opa(o, (lv_opa_t)v, 0); }
 static void set_card(void *o, int32_t v) { lv_obj_set_style_opa(o, (lv_opa_t)v, 0); lv_obj_set_style_translate_y(o, (255 - v) * 14 / 255, 0); }
@@ -60,6 +63,7 @@ void wup_alert(const char *title, const char *message, const char *ok, const cha
     if (two) btn[0] = choice(row, cancel);
     btn[two] = choice(row, ok ? ok : "OK");
     paint();
+    if (wup_alert_sound) wup_alert_sound(0);
     anim(dim, set_opa, 0, 96, 180, NULL);              /* (a little darker: 38 %) */
     anim(card, set_card, 0, 255, 220, NULL);
 }
@@ -83,4 +87,27 @@ int wup_alert_step(unsigned pressed) {
         if (f) f();
     }
     return 1;
+}
+
+/* ---- the notice */
+static lv_obj_t *pill; static lv_timer_t *pill_timer;
+static void pill_fade(void *o, int32_t v) { lv_obj_set_style_opa(o, (lv_opa_t)v, 0); lv_obj_set_style_translate_y(o, (255 - v) * 10 / 255, 0); }
+static void pill_gone(lv_anim_t *a) { (void)a; if (pill) { lv_obj_delete_async(pill); pill = 0; } }
+static void pill_out(lv_timer_t *t) { (void)t; pill_timer = 0; if (pill) anim(pill, pill_fade, 255, 0, 260, pill_gone); }
+void wup_notice(const char *text, int good) {
+    if (pill) { lv_anim_delete(pill, pill_fade); lv_obj_delete(pill); pill = 0; }
+    if (pill_timer) { lv_timer_delete(pill_timer); pill_timer = 0; }
+    int dark = lv_color_brightness(lv_obj_get_style_bg_color(lv_screen_active(), 0)) < 128;
+    pill = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(pill); lv_obj_set_size(pill, LV_SIZE_CONTENT, LV_SIZE_CONTENT); lv_obj_remove_flag(pill, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(pill, lv_color_hex(dark ? 0x48484a : 0x1c1c1e), 0); lv_obj_set_style_bg_opa(pill, 240, 0);
+    lv_obj_set_style_radius(pill, 26, 0); lv_obj_set_style_pad_hor(pill, 24, 0); lv_obj_set_style_pad_ver(pill, 14, 0);
+    lv_obj_set_flex_flow(pill, LV_FLEX_FLOW_ROW); lv_obj_set_flex_align(pill, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(pill, 12, 0); lv_obj_set_style_text_color(pill, lv_color_white(), 0);
+    lv_obj_t *i = lv_label_create(pill); lv_label_set_text(i, good ? LV_SYMBOL_OK : LV_SYMBOL_WARNING);
+    lv_obj_t *l = lv_label_create(pill); lv_label_set_text(l, text);
+    lv_obj_align(pill, LV_ALIGN_BOTTOM_MID, 0, -64);    /* (above the button hints) */
+    if (wup_alert_sound && good) wup_alert_sound(1);
+    anim(pill, pill_fade, 0, 255, 200, NULL);
+    pill_timer = lv_timer_create(pill_out, 1800, NULL); lv_timer_set_repeat_count(pill_timer, 1);
 }

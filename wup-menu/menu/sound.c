@@ -1,4 +1,4 @@
-/* sound: the menu's two sounds, made here with integer maths (no samples stored, no maths library):
+/* sound: the menu's sounds, made here with integer maths (no samples stored, no maths library):
  *   the chime  when the pad starts into the menu: four soft bell notes rising (E, B, E, G#), about 1.5 s;
  *   the click  when the selection moves, something opens or B goes back: 8 ms, under 2 KB.
  * Each note is a sine (a two-term recurrence) with a quieter octave above it, a 5 ms rise and an exponential fall.
@@ -10,7 +10,7 @@
 
 #include "wup_tone.h"
 
-static int16_t click[2 * CLICK];
+static int16_t click[2 * CLICK], two[2][2 * TWO_NOTES];   /* two: for an alert, for a notice */
 #define CHIME (48000 * 3 / 2)                       /* 1.5 s */
 static voice_t chime[8];
 static int ready, open_;
@@ -22,7 +22,7 @@ static int on(void) {
     return 1;
 }
 void sound_init(void) {
-    make_click(click);
+    make_click(click); make_two_notes(two[0], 1); make_two_notes(two[1], 0);
     ready = 1;
 }
 static int chime_thread = -1;
@@ -74,4 +74,8 @@ void sound_click(void) {
     if (now - last < 40000) return;                 /* one click for one action (a press that also moves the focus) */
     last = now;
     if (on()) wup_audio_queue(click, CLICK);
+}
+void sound_note(int notice) {                       /* an alert or a notice appears (wup_alert_sound) */
+    if (!ready || M.cfg.sound_off || !on()) return;
+    wup_audio_queue(two[notice != 0], TWO_NOTES);
 }

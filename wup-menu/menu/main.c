@@ -119,7 +119,10 @@ static void autojoin_step(void) {
     case 2:                                            /* associated? (checked once a second) */
         if (++aj_ticks % 100) return;
         if (wifi_associated(&aj_net)) { wup_net_dhcp(); aj_state = 3; aj_ticks = 0; wdbg("autojoin associated", 0); }
-        else if (aj_ticks > 3000) { aj_state = 0; wdbg("autojoin gave up", 0); }
+        else if (aj_ticks > 3000) {
+            aj_state = 0; wdbg("autojoin gave up", 0);
+            static char t[56]; snprintf(t, sizeof t, "Couldn't Join \"%s\"", M.cfg.ssid); wup_notice(t, 0);
+        }
         return;
     case 3:
         if (M.ip[0]) { aj_state = 0; wdbg("autojoin has an address", 1); }
@@ -162,7 +165,7 @@ const char *menu_install_received(int run) {
     snprintf(path, sizeof path, "/apps/%s", s); lfs_mkdir(&fs_lfs, path);
     snprintf(path, sizeof path, "/apps/%s/%s.wup", s, s);
     fs_remove(path);
-    if (lfs_rename(&fs_lfs, WUPLINK_STREAM_PATH, path)) { fs_remove(WUPLINK_STREAM_PATH); return "The app could not be installed"; }
+    if (lfs_rename(&fs_lfs, WUPLINK_STREAM_PATH, path)) { fs_remove(WUPLINK_STREAM_PATH); return "The app could not be stored on the GamePad"; }
     apps_scan();
     return run ? menu_start(path) : 0;
 }
